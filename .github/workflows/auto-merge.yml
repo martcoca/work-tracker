@@ -1,0 +1,122 @@
+name: Auto-merge
+
+# Merges a pull request once every check on its head commit has passed, so no human has
+# to be awake for a green build to land.
+#
+# Two properties make it trustworthy:
+#
+# 1. `workflow_run` executes the copy of this file on the default branch, never the copy
+#    in the pull request. A pull request cannot weaken its own merge gate.
+# 2. A check that has not finished is treated as "not yet", never as "go ahead". Green by
+#    absence is the failure mode this organization keeps finding.
+#
+# The `workflows:` list must name every other workflow in the repository. Omitting the
+# list does not mean "all" — it matches nothing and auto-merge never fires at all, which
+# looks exactly like a pull request sitting green and unmerged.
+# `check-automerge-coverage.sh` asserts the list is complete, so adding a workflow without
+# listing it fails CI rather than silently disabling or short-circuiting the gate.
+
+on:
+  workflow_run:
+    workflows: ["Guard"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  # Dispatching the default-branch workflows the merge push cannot trigger needs this.
+  # Without it the dispatch returns 403 and the merged commit goes unverified.
+  actions: write
+  # Declaring any permissions block sets every unlisted scope to `none`. Reading check
+  # runs therefore needs saying so explicitly. A public repository hides this — its check
+  # runs are readable anonymously — so the omission only surfaces on a private one, as a
+  # 403 that looks identical to the token problems that came before it.
+  checks: read
+
+jobs:
+  merge:
+    name: Merge when green
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Merge the pull request if every check passed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # GitHub raises no events for actions taken with GITHUB_TOKEN, so the push this
+          # job creates on the default branch triggers nothing. Every `push: [main]`
+          # workflow — the plan against real cloud state, the full-length suite — would be
+          # silently skipped on precisely the commits no human reviewed. Dispatch them.
+          dispatch_default_branch_workflows() {
+            local wf
+            for wf in $(scripts/post-merge-workflows.sh list); do
+              if gh workflow run "$wf" --ref main --repo "$REPO"; then
+                echo "dispatched $wf on main"
+              else
+                echo "::error::could not dispatch $wf; the merged commit is unverified"
+                exit 1
+              fi
+            done
+          }
+
+          # Match the head SHA against open pull requests rather than asking
+          # /commits/{sha}/pulls, which returned 403 to the workflow token on the private
+          # repository while working on the public ones. The plain pulls list is allowed
+          # in both, so this removes a difference in behaviour by visibility.
+          PR="$(gh api "/repos/$REPO/pulls?state=open&per_page=100" --paginate \
+            --jq "[.[] | select(.head.sha == \"$HEAD_SHA\" and .draft == false)][0].number // empty")"
+          if [ -z "$PR" ]; then
+            echo "No open pull request for $HEAD_SHA; nothing to merge."
+            exit 0
+          fi
+
+          CHECKS="$(gh api "/repos/$REPO/commits/$HEAD_SHA/check-runs" --paginate \
+            --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion // "pending")"')"
+          echo "$CHECKS"
+
+          if [ -z "$CHECKS" ]; then
+            echo "No check runs reported for $HEAD_SHA; refusing to merge."
+            exit 1
+          fi
+
+          UNFINISHED="$(printf '%s\n' "$CHECKS" | awk -F'\t' '$2 != "completed"' || true)"
+          if [ -n "$UNFINISHED" ]; then
+            echo "Checks still running; leaving PR #$PR for the next completion event."
+            exit 0
+          fi
+
+          BAD="$(printf '%s\n' "$CHECKS" \
+            | awk -F'\t' '$3 != "success" && $3 != "skipped" && $3 != "neutral"' || true)"
+          if [ -n "$BAD" ]; then
+            echo "Refusing to merge PR #$PR; these checks did not pass:"
+            printf '%s\n' "$BAD"
+            exit 1
+          fi
+
+          echo "All checks passed. Merging PR #$PR."
+
+          # Several workflows finishing together each trigger this one, so two runs can
+          # reach the merge at the same time. The loser gets "merge already in progress"
+          # and must not report failure: the pull request did merge, and a red run here
+          # would be noise that hides a real one.
+          if gh pr merge "$PR" --squash --delete-branch --repo "$REPO"; then
+            dispatch_default_branch_workflows
+            exit 0
+          fi
+          STATE="$(gh pr view "$PR" --repo "$REPO" --json state --jq .state)"
+          if [ "$STATE" = MERGED ]; then
+            echo "PR #$PR was merged by a concurrent run of this workflow."
+            exit 0
+          fi
+          echo "Merge failed and PR #$PR is $STATE."
+          exit 1

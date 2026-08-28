@@ -1,0 +1,55 @@
+name: Guard
+
+# Repository-contract checks that are not any packet's job. A packet adds its own test
+# job; this one exists from the first commit so the contract is never unenforced.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Required: an auto-merge push raises no events, so this must be dispatchable.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Repository contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Packet integrity
+        if: github.event_name == 'pull_request'
+        run: >-
+          scripts/check-packet-integrity.sh
+          "${{ github.event.pull_request.base.sha }}"
+
+      - name: Workflow permissions are explicit
+        run: scripts/check-workflow-permissions.sh
+
+      - name: A completed packet arrives with its evidence
+        if: github.event_name == 'pull_request'
+        run: scripts/check-evidence.sh "${{ github.event.pull_request.base.sha }}"
+
+      - name: Auto-merge awaits every workflow
+        run: scripts/check-automerge-coverage.sh
+
+      - name: Push workflows are dispatchable after an auto-merge
+        run: scripts/post-merge-workflows.sh check
+
+      - name: Shell scripts parse
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r s; do
+            bash -n "$s"
+            echo "parsed $s"
+            found=$((found + 1))
+          done < <(find scripts -name '*.sh' -type f | sort)
+          [ "$found" -gt 0 ] || { echo "no shell scripts found"; exit 1; }
