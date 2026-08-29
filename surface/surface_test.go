@@ -84,21 +84,26 @@ func TestExpiredHeldDirectoryRendersAgeWithoutTenantData(t *testing.T) {
 	t.Logf("5. expired held directory: HTTP %d %s", response.Code, strings.TrimSpace(response.Body.String()))
 }
 
-func TestBuiltRouteListRejectsEveryMutatingMethod(t *testing.T) {
+func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 	routes := BuiltRoutes()
-	if err := ValidateReadOnly(routes); err != nil {
+	if err := ValidateAuthoringRoutes(routes); err != nil {
 		t.Fatal(err)
 	}
-	methods := make([]string, len(routes))
-	for index, route := range routes {
-		methods[index] = route.Method + " " + route.Pattern
+	readRoutes := make([]Route, 0, len(routes))
+	for _, route := range routes {
+		if route.Method == http.MethodGet {
+			readRoutes = append(readRoutes, route)
+		}
 	}
-	t.Logf("built routes: %v", methods)
-	mutated := append(routes, Route{Name: "synthetic mutation", Method: http.MethodPost, Pattern: "/api/packets"})
-	if err := ValidateReadOnly(mutated); err == nil {
-		t.Fatal("synthetic POST route was accepted")
+	if err := ValidateReadOnly(readRoutes); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("built routes: %v", authoringRouteMethods())
+	mutated := append(routes, Route{Name: "issued-body-update", Method: http.MethodPut, Pattern: "/api/packets/{packet}"})
+	if err := ValidateAuthoringRoutes(mutated); err == nil {
+		t.Fatal("synthetic issued-packet edit route was accepted")
 	} else {
-		t.Logf("synthetic POST refused: %v", err)
+		t.Logf("synthetic issued-packet edit route refused: %v", err)
 	}
 }
 

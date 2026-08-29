@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/martcoca/work-tracker/authoring"
 	"github.com/martcoca/work-tracker/contract"
 	"github.com/martcoca/work-tracker/identity"
+	"github.com/martcoca/work-tracker/packet"
 	"github.com/martcoca/work-tracker/tenant"
 )
 
@@ -26,6 +28,19 @@ var builtRoutes = []Route{
 	{Name: "initiative", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}"},
 	{Name: "epic", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}"},
 	{Name: "packet", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},
+	{Name: "draft", Method: http.MethodGet, Pattern: "/api/drafts/{draft}"},
+	{Name: "authored-packet", Method: http.MethodGet, Pattern: "/api/authored/packets/{packet}"},
+	{Name: "draft-create", Method: http.MethodPost, Pattern: "/api/initiatives/{initiative}/epics/{epic}/drafts"},
+	{Name: "draft-update", Method: http.MethodPut, Pattern: "/api/drafts/{draft}"},
+	{Name: "draft-issue", Method: http.MethodPost, Pattern: "/api/drafts/{draft}/issue"},
+	{Name: "supersession-draft-create", Method: http.MethodPost, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}/supersessions"},
+}
+
+var allowedMutationRoutes = map[string]string{
+	http.MethodPost + " /api/initiatives/{initiative}/epics/{epic}/drafts":                         "draft-create",
+	http.MethodPut + " /api/drafts/{draft}":                                                        "draft-update",
+	http.MethodPost + " /api/drafts/{draft}/issue":                                                 "draft-issue",
+	http.MethodPost + " /api/initiatives/{initiative}/epics/{epic}/packets/{packet}/supersessions": "supersession-draft-create",
 }
 
 func BuiltRoutes() []Route { return append([]Route(nil), builtRoutes...) }
@@ -40,9 +55,41 @@ func ValidateReadOnly(routes []Route) error {
 	return nil
 }
 
+// ValidateAuthoringRoutes permits only the four named draft lifecycle mutations. The
+// exact allowlist makes adding an issued-packet body edit fail service construction.
+func ValidateAuthoringRoutes(routes []Route) error {
+	seenNames := make(map[string]struct{}, len(routes))
+	seenMutations := make(map[string]struct{}, len(allowedMutationRoutes))
+	for _, route := range routes {
+		if _, duplicate := seenNames[route.Name]; duplicate {
+			return fmt.Errorf("duplicate route name %q", route.Name)
+		}
+		seenNames[route.Name] = struct{}{}
+		if route.Method == http.MethodGet {
+			continue
+		}
+		key := route.Method + " " + route.Pattern
+		expectedName, allowed := allowedMutationRoutes[key]
+		if !allowed || expectedName != route.Name {
+			return fmt.Errorf("route %q is not an allowed draft lifecycle mutation: %s", route.Name, key)
+		}
+		if _, duplicate := seenMutations[key]; duplicate {
+			return fmt.Errorf("duplicate mutation route %s", key)
+		}
+		seenMutations[key] = struct{}{}
+	}
+	for key := range allowedMutationRoutes {
+		if _, present := seenMutations[key]; !present {
+			return fmt.Errorf("required authoring route is missing: %s", key)
+		}
+	}
+	return nil
+}
+
 type Service struct {
 	snapshot *Snapshot
 	verifier identity.Verifier
+	authors  *authoring.Workspace
 	now      func() time.Time
 }
 
@@ -50,10 +97,20 @@ func NewService(snapshot *Snapshot, verifier identity.Verifier) (*Service, error
 	if snapshot == nil || verifier == nil {
 		return nil, errors.New("snapshot and identity verifier are required")
 	}
-	if err := ValidateReadOnly(builtRoutes); err != nil {
+	if err := ValidateAuthoringRoutes(builtRoutes); err != nil {
 		return nil, err
 	}
-	return &Service{snapshot: snapshot, verifier: verifier, now: time.Now}, nil
+	tracker, err := packet.NewTracker(snapshot.directory)
+	if err != nil {
+		return nil, err
+	}
+	authors, err := authoring.NewWorkspace(tracker, snapshotAuthoringScope{
+		snapshot: snapshot, targets: map[string]struct{}{"work-tracker": {}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &Service{snapshot: snapshot, verifier: verifier, authors: authors, now: time.Now}, nil
 }
 
 func (service *Service) Handler() http.Handler {
@@ -66,21 +123,33 @@ func (service *Service) Handler() http.Handler {
 				writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
 			}
 		case "initiatives":
-			handler = service.authenticated(func(principal identity.Principal, _ *http.Request) (any, error) {
+			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, _ *http.Request) (any, error) {
 				return service.snapshot.Initiatives(principal, service.now().UTC())
 			})
 		case "initiative":
-			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
 				return service.snapshot.Initiative(principal, request.PathValue("initiative"), service.now().UTC())
 			})
 		case "epic":
-			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
 				return service.snapshot.Epic(principal, request.PathValue("initiative"), request.PathValue("epic"), service.now().UTC())
 			})
 		case "packet":
-			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
 				return service.snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
 			})
+		case "draft":
+			handler = service.authenticated(http.StatusOK, service.getDraft)
+		case "authored-packet":
+			handler = service.authenticated(http.StatusOK, service.getAuthoredPacket)
+		case "draft-create":
+			handler = service.authenticated(http.StatusCreated, service.createDraft)
+		case "draft-update":
+			handler = service.authenticated(http.StatusOK, service.updateDraft)
+		case "draft-issue":
+			handler = service.authenticated(http.StatusCreated, service.issueDraft)
+		case "supersession-draft-create":
+			handler = service.authenticated(http.StatusCreated, service.createSupersessionDraft)
 		default:
 			panic("unimplemented built route: " + route.Name)
 		}
@@ -91,7 +160,7 @@ func (service *Service) Handler() http.Handler {
 
 type readOperation func(identity.Principal, *http.Request) (any, error)
 
-func (service *Service) authenticated(operation readOperation) http.HandlerFunc {
+func (service *Service) authenticated(successStatus int, operation readOperation) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
 		token, ok := strings.CutPrefix(request.Header.Get("Authorization"), "Bearer ")
 		if !ok || strings.TrimSpace(token) == "" {
@@ -108,7 +177,7 @@ func (service *Service) authenticated(operation readOperation) http.HandlerFunc 
 			service.writeOperationError(response, err)
 			return
 		}
-		writeJSON(response, http.StatusOK, result)
+		writeJSON(response, successStatus, result)
 	}
 }
 
@@ -125,8 +194,20 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusForbidden, "retired_tenant", "The signed-in tenant is retired.", status)
 	case errors.Is(err, ErrTenantIsolation), errors.Is(err, ErrViewNotFound):
 		writeAPIError(response, http.StatusNotFound, "not_found", "That item is not available to this tenant.", status)
+	case errors.Is(err, authoring.ErrDraftNotFound), errors.Is(err, packet.ErrNotFound):
+		writeAPIError(response, http.StatusNotFound, "not_found", "That authoring item is not available.", status)
+	case errors.Is(err, authoring.ErrDraftIssued):
+		writeAPIError(response, http.StatusConflict, "draft_issued", "Issued scope is frozen; create a supersession instead.", status)
+	case errors.Is(err, authoring.ErrDraftConflict), errors.Is(err, packet.ErrConflict), errors.Is(err, packet.ErrAlreadyExists), errors.Is(err, packet.ErrClosed):
+		writeAPIError(response, http.StatusConflict, "write_conflict", "The authoring state changed; reload before continuing.", status)
+	case errors.Is(err, authoring.ErrIncomplete):
+		writeAPIError(response, http.StatusUnprocessableEntity, "draft_incomplete", "Every packet field is required before issue.", status)
+	case errors.Is(err, authoring.ErrInvalidScope):
+		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_scope", "Initiative, epic, packet id, or target is not available.", status)
+	case errors.Is(err, errInvalidRequest):
+		writeAPIError(response, http.StatusBadRequest, "invalid_request", "The request body is invalid.", status)
 	default:
-		writeAPIError(response, http.StatusInternalServerError, "read_failed", "The read could not be completed.", status)
+		writeAPIError(response, http.StatusInternalServerError, "operation_failed", "The operation could not be completed.", status)
 	}
 }
 

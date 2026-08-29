@@ -277,6 +277,46 @@ var mutations = []mutation{
 		original:    `	{Name: "packet", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},`,
 		replacement: `	{Name: "packet", Method: http.MethodPost, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},`,
 	},
+	{
+		name:        "issued_draft_is_frozen",
+		path:        "authoring/workspace.go",
+		original:    `	if draft.State == StateIssued {`,
+		replacement: `	if false && draft.State == StateIssued {`,
+	},
+	{
+		name: "draft_complete_before_issue",
+		path: "authoring/workspace.go",
+		original: `	if err := validateComplete(draft); err != nil {
+		return IssueResult{}, err
+	}`,
+		replacement: `	// completeness check removed by mutation`,
+	},
+	{
+		name: "authoring_scope_checked_at_issue",
+		path: "authoring/workspace.go",
+		original: `	if err := workspace.scope.ValidateScope(draft.TenantID, draft.InitiativeID, draft.EpicID, draft.Target, workspace.now().UTC()); err != nil {
+		return IssueResult{}, err
+	}`,
+		replacement: `	// scope check removed by mutation`,
+	},
+	{
+		name:        "issue_actor_is_signed_subject",
+		path:        "authoring/workspace.go",
+		original:    `	actor := packet.Actor(principal.Subject)`,
+		replacement: `	actor := packet.Actor("wrong-actor")`,
+	},
+	{
+		name:        "draft_updates_replace_body",
+		path:        "authoring/workspace.go",
+		original:    `	draft.Body = command.Body`,
+		replacement: `	// body update removed by mutation`,
+	},
+	{
+		name:        "authoring_mutations_are_allowlisted",
+		path:        "surface/handler.go",
+		original:    `		if !allowed || expectedName != route.Name {`,
+		replacement: `		if false && (!allowed || expectedName != route.Name) {`,
+	},
 }
 
 func main() {
