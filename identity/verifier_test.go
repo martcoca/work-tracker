@@ -77,7 +77,13 @@ func TestFirebaseVerifierRefusesTamperingAndInvalidClaims(t *testing.T) {
 	}
 
 	valid := signedToken(t, privateKey, "synthetic-key", baseClaims)
-	tampered := valid[:len(valid)-1] + "A"
+	parts := strings.Split(valid, ".")
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	signature[0] ^= 1
+	tampered := parts[0] + "." + parts[1] + "." + base64.RawURLEncoding.EncodeToString(signature)
 	if _, err := verifier.Verify(context.Background(), tampered); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("tampered error = %v", err)
 	}
@@ -98,6 +104,13 @@ func TestFirebaseVerifierRefusesTamperingAndInvalidClaims(t *testing.T) {
 	expired["exp"] = clock.Unix()
 	if _, err := verifier.Verify(context.Background(), signedToken(t, privateKey, "synthetic-key", expired)); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("expired error = %v", err)
+	}
+
+	missingTimes := cloneClaims(baseClaims)
+	delete(missingTimes, "iat")
+	delete(missingTimes, "auth_time")
+	if _, err := verifier.Verify(context.Background(), signedToken(t, privateKey, "synthetic-key", missingTimes)); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("missing times error = %v", err)
 	}
 }
 

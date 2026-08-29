@@ -58,21 +58,34 @@ func NewService(snapshot *Snapshot, verifier identity.Verifier) (*Service, error
 
 func (service *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
-		writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
-	})
-	mux.HandleFunc("GET /api/initiatives", service.authenticated(func(principal identity.Principal, _ *http.Request) (any, error) {
-		return service.snapshot.Initiatives(principal, service.now().UTC())
-	}))
-	mux.HandleFunc("GET /api/initiatives/{initiative}", service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
-		return service.snapshot.Initiative(principal, request.PathValue("initiative"), service.now().UTC())
-	}))
-	mux.HandleFunc("GET /api/initiatives/{initiative}/epics/{epic}", service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
-		return service.snapshot.Epic(principal, request.PathValue("initiative"), request.PathValue("epic"), service.now().UTC())
-	}))
-	mux.HandleFunc("GET /api/initiatives/{initiative}/epics/{epic}/packets/{packet}", service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
-		return service.snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
-	}))
+	for _, route := range builtRoutes {
+		var handler http.HandlerFunc
+		switch route.Name {
+		case "health":
+			handler = func(response http.ResponseWriter, _ *http.Request) {
+				writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
+			}
+		case "initiatives":
+			handler = service.authenticated(func(principal identity.Principal, _ *http.Request) (any, error) {
+				return service.snapshot.Initiatives(principal, service.now().UTC())
+			})
+		case "initiative":
+			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+				return service.snapshot.Initiative(principal, request.PathValue("initiative"), service.now().UTC())
+			})
+		case "epic":
+			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+				return service.snapshot.Epic(principal, request.PathValue("initiative"), request.PathValue("epic"), service.now().UTC())
+			})
+		case "packet":
+			handler = service.authenticated(func(principal identity.Principal, request *http.Request) (any, error) {
+				return service.snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
+			})
+		default:
+			panic("unimplemented built route: " + route.Name)
+		}
+		mux.HandleFunc(route.Method+" "+route.Pattern, handler)
+	}
 	return securityHeaders(mux)
 }
 

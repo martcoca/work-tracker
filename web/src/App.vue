@@ -206,8 +206,20 @@ function dateText(value: string): string {
           <ol class="timeline">
             <li v-for="event in packet.packet.history" :key="event.event_id">
               <strong>{{ event.kind }}</strong><span>{{ dateText(event.timestamp) }} UTC · {{ event.actor }}</span>
+              <dl v-if="event.body" class="event-facts">
+                <div><dt>Goal</dt><dd>{{ event.body.goal }}</dd></div>
+                <div><dt>Boundary</dt><dd>{{ event.body.boundary }}</dd></div>
+                <div><dt>Done when</dt><dd>{{ event.body.done_when }}</dd></div>
+                <div><dt>Check</dt><dd>{{ event.body.check }}</dd></div>
+                <div><dt>Context</dt><dd>{{ event.body.context }}</dd></div>
+              </dl>
+              <p v-if="event.tenant_id">Tenant {{ event.tenant_id }}</p>
+              <p v-if="event.parent_id">Supersedes {{ event.parent_id }}</p>
               <p v-if="event.text">{{ event.text }}</p>
               <p v-if="event.from && event.to">{{ event.from }} → {{ event.to }}</p>
+              <p v-if="event.evidence?.length">Evidence: {{ event.evidence.join(', ') }}</p>
+              <p v-if="event.replacement_id">Replacement {{ event.replacement_id }}</p>
+              <p v-if="event.reason">Closed: {{ event.reason }}</p>
             </li>
           </ol>
         </section>

@@ -48,7 +48,11 @@ const views: Record<string, InitiativesView | InitiativeView | EpicView | Packet
       parent_id: null,
       superseded_by: null,
       history: [
-        { kind: "packet issued", event_id: "event-1", timestamp: "2035-05-06T12:00:00Z", actor: "human-synthetic" },
+        {
+          kind: "packet issued", event_id: "event-1", timestamp: "2035-05-06T12:00:00Z", actor: "human-synthetic",
+          tenant_id: "tenant-synthetic",
+          body: { goal: "Synthetic readable goal", boundary: "Read only", done_when: "Synthetic checks pass", check: "npm test", context: "Synthetic context" },
+        },
         { kind: "packet commented", event_id: "comment-1", timestamp: "2035-05-06T12:10:00Z", actor: "human-synthetic", text: "Synthetic comment" },
       ],
     },

@@ -53,6 +53,10 @@ th, td { border-top: 1px solid #d9e2ec; padding: 0.9rem; text-align: left; verti
 .timeline li { background: white; border: 1px solid #d9e2ec; border-radius: 0.45rem; margin: 0 0 1rem; padding: 1rem; position: relative; }
 .timeline li::before { background: #075985; border: 3px solid #f6f8fb; border-radius: 50%; content: ""; height: 0.8rem; left: -2rem; position: absolute; top: 1.2rem; width: 0.8rem; }
 .timeline span { color: #486581; display: block; font-size: 0.9rem; }
+.event-facts { border-left: 2px solid #d9e2ec; margin: 0.75rem 0; padding-left: 0.75rem; }
+.event-facts div { display: grid; gap: 0.5rem; grid-template-columns: 6rem 1fr; }
+.event-facts dt { font-weight: 800; }
+.event-facts dd { margin: 0; }
 footer { border-top: 1px solid #d9e2ec; color: #486581; padding: 1.5rem max(1.25rem, calc((100% - 72rem) / 2)); }
 code { background: #e6eef5; border-radius: 0.2rem; padding: 0.1rem 0.25rem; }
 @media (max-width: 38rem) {

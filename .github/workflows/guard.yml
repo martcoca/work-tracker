@@ -86,3 +86,71 @@ jobs:
           GOWORK: "off"
           GOPROXY: "off"
         run: go run ./internal/mutationgate
+
+  human-surface:
+    name: Read-only human surface
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Test navigation and accessibility
+        run: npm test
+
+      - name: Build production surface
+        run: npm run build
+
+  identity-plan:
+    name: Unapplied identity plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+
+      - name: Initialize without backend
+        run: tofu -chdir=infra/identity init -backend=false
+
+      - name: Check formatting and provider schema
+        run: |
+          tofu -chdir=infra/identity fmt -check -recursive
+          tofu -chdir=infra/identity validate
+
+      - name: Test plan assertions with mock providers
+        run: tofu -chdir=infra/identity test -no-color
+
+      - name: Produce refresh-disabled synthetic plan
+        env:
+          GOOGLE_OAUTH_ACCESS_TOKEN: synthetic-ci-not-a-credential
+        run: >-
+          tofu -chdir=infra/identity plan
+          -refresh=false -input=false -lock=false -no-color
+          -var-file=../../config/example/identity.tfvars
+          -out=/tmp/work-tracker-identity.tfplan
+
+      - name: Prove idle cost is zero
+        run: scripts/cloud/gcp/cost-guard.sh /tmp/work-tracker-identity.tfplan

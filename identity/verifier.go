@@ -121,7 +121,8 @@ func (verifier *FirebaseVerifier) Verify(ctx context.Context, token string) (Pri
 	if claims.Audience != verifier.projectID || claims.Issuer != "https://securetoken.google.com/"+verifier.projectID {
 		return Principal{}, fmt.Errorf("%w: wrong audience or issuer", ErrInvalidToken)
 	}
-	if claims.Subject == "" || claims.ExpiresAt <= now || claims.IssuedAt > now || claims.Authenticated > now {
+	if claims.Subject == "" || len(claims.Subject) > 128 || claims.ExpiresAt <= now ||
+		claims.IssuedAt <= 0 || claims.IssuedAt > now || claims.Authenticated <= 0 || claims.Authenticated > now {
 		return Principal{}, fmt.Errorf("%w: invalid subject or token times", ErrInvalidToken)
 	}
 	if strings.TrimSpace(claims.TenantID) == "" {

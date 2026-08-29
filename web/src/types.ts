@@ -42,6 +42,14 @@ export interface HistoryEvent {
   timestamp: string;
   actor: string;
   tenant_id?: string;
+  body?: {
+    goal: string;
+    boundary: string;
+    done_when: string;
+    check: string;
+    context: string;
+  };
+  parent_id?: string;
   text?: string;
   from?: string;
   to?: string;
@@ -65,6 +73,12 @@ export interface PacketRecord {
   evidence: string[];
   parent_id: string | null;
   superseded_by: string | null;
+  closure?: {
+    event_id: string;
+    timestamp: string;
+    actor: string;
+    reason: string;
+  } | null;
   history: HistoryEvent[];
 }
 
