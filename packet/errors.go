@@ -6,15 +6,16 @@ import (
 )
 
 var (
-	ErrAlreadyExists         = errors.New("packet already exists")
-	ErrNotFound              = errors.New("packet not found")
-	ErrConflict              = errors.New("concurrent modification")
-	ErrProjectionUnavailable = errors.New("projection unavailable")
-	ErrInvalidEvent          = errors.New("invalid event")
-	ErrIllegalTransition     = errors.New("illegal status transition")
-	ErrEvidenceRequired      = errors.New("done transition requires evidence")
-	ErrUnexpectedEvidence    = errors.New("evidence is allowed only on a done transition")
-	ErrClosed                = errors.New("packet is closed")
+	ErrAlreadyExists           = errors.New("packet already exists")
+	ErrNotFound                = errors.New("packet not found")
+	ErrConflict                = errors.New("concurrent modification")
+	ErrProjectionUnavailable   = errors.New("projection unavailable")
+	ErrInvalidEvent            = errors.New("invalid event")
+	ErrIllegalTransition       = errors.New("illegal status transition")
+	ErrEvidenceRequired        = errors.New("done transition requires evidence")
+	ErrUnexpectedEvidence      = errors.New("evidence is allowed only on a done transition")
+	ErrClosed                  = errors.New("packet is closed")
+	ErrTenantValidatorRequired = errors.New("tenant validator is required")
 )
 
 // ConflictError reports the stale version that caused a mutation to be rejected.

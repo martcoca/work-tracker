@@ -122,6 +122,131 @@ var mutations = []mutation{
 		original:    `		PacketTaken{Meta: takenMeta, PacketID: command.PacketID},`,
 		replacement: `		// taken event removed by mutation`,
 	},
+	{
+		name:        "export_lifetime_is_one_hour",
+		path:        "contract/envelope.go",
+		original:    `	expiresAt := publishedAt.Add(FreshnessBound)`,
+		replacement: `	expiresAt := publishedAt.Add(2 * FreshnessBound)`,
+	},
+	{
+		name:        "canonical_keys_are_sorted",
+		path:        "contract/envelope.go",
+		original:    `		sort.Strings(keys)`,
+		replacement: `		sort.Sort(sort.Reverse(sort.StringSlice(keys)))`,
+	},
+	{
+		name:        "unsupported_export_schema_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if envelope.Schema != expectedSchema {`,
+		replacement: `	if false && envelope.Schema != expectedSchema {`,
+	},
+	{
+		name:        "stale_export_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if !now.Before(expiresAt) {`,
+		replacement: `	if false && !now.Before(expiresAt) {`,
+	},
+	{
+		name:        "tampered_payload_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if !equalDigest(envelope.Digest, actualDigest) {`,
+		replacement: `	if false && !equalDigest(envelope.Digest, actualDigest) {`,
+	},
+	{
+		name:        "missing_export_distinguished",
+		path:        "contract/envelope.go",
+		original:    `			return Envelope{}, fmt.Errorf("%w: %s", ErrExportNotFound, path)`,
+		replacement: `			return Envelope{}, fmt.Errorf("%w: %s", ErrInvalidExport, path)`,
+	},
+	{
+		name:        "publication_provenance_required",
+		path:        "contract/envelope.go",
+		original:    `	if err := ValidateSource(publication.Source); err != nil {`,
+		replacement: `	if err := ValidateSource(publication.Source); false && err != nil {`,
+	},
+	{
+		name:        "provenance_repository_is_real_shaped",
+		path:        "contract/provenance.go",
+		original:    `	if len(parts) != 2 || !repositoryPart.MatchString(parts[0]) || !repositoryPart.MatchString(parts[1]) {`,
+		replacement: `	if false && (len(parts) != 2 || !repositoryPart.MatchString(parts[0]) || !repositoryPart.MatchString(parts[1])) {`,
+	},
+	{
+		name:        "provenance_commit_is_full_object_id",
+		path:        "contract/provenance.go",
+		original:    `	if !commitID.MatchString(source.Commit) {`,
+		replacement: `	if false && !commitID.MatchString(source.Commit) {`,
+	},
+	{
+		name:        "tracker_requires_tenant_validator",
+		path:        "packet/tracker.go",
+		original:    `	if tenantValidator == nil {`,
+		replacement: `	if false && tenantValidator == nil {`,
+	},
+	{
+		name: "tenant_checked_at_issue",
+		path: "packet/tracker.go",
+		original: `	if err := t.tenantValidator.ValidateTenantID(string(command.TenantID), t.now().UTC()); err != nil {
+		return Packet{}, err
+	}`,
+		replacement: `	// tenant validation removed by mutation`,
+	},
+	{
+		name: "replacement_tenant_checked_at_issue",
+		path: "packet/tracker.go",
+		original: `	if err := t.tenantValidator.ValidateTenantID(string(command.ReplacementTenant), t.now().UTC()); err != nil {
+		return Packet{}, Packet{}, err
+	}`,
+		replacement: `	// replacement tenant validation removed by mutation`,
+	},
+	{
+		name:        "tenant_directory_exact_fields",
+		path:        "tenant/directory.go",
+		original:    `	decoder.DisallowUnknownFields()`,
+		replacement: `	// unknown tenant fields allowed by mutation`,
+	},
+	{
+		name:        "unknown_tenant_refused",
+		path:        "tenant/directory.go",
+		original:    `	if !exists {`,
+		replacement: `	if false && !exists {`,
+	},
+	{
+		name:        "retired_tenant_refused_distinctly",
+		path:        "tenant/directory.go",
+		original:    `	if record.Status == StatusRetired {`,
+		replacement: `	if false && record.Status == StatusRetired {`,
+	},
+	{
+		name:        "stale_tenant_directory_refused_at_issue",
+		path:        "tenant/directory.go",
+		original:    `	if !at.Before(directory.expiresAt) {`,
+		replacement: `	if false && !at.Before(directory.expiresAt) {`,
+	},
+	{
+		name: "tenant_status_vocabulary_exact",
+		path: "tenant/directory.go",
+		original: `	case StatusActive, StatusSuspended, StatusRetired:
+	default:`,
+		replacement: `	case StatusActive, StatusSuspended, StatusRetired:
+	case Status("deleted"):
+	default:`,
+	},
+	{
+		name:        "packet_export_schema_exact",
+		path:        "packetexport/export.go",
+		original:    `	Schema   = "martcoca.tracker.packets/1"`,
+		replacement: `	Schema   = "martcoca.tracker.packets/2"`,
+	},
+	{
+		name: "packet_payload_sorted_by_id",
+		path: "packetexport/export.go",
+		original: `	sort.Slice(records, func(left, right int) bool {
+		return records[left].ID < records[right].ID
+	})`,
+		replacement: `	sort.Slice(records, func(left, right int) bool {
+		return false
+	})`,
+	},
 }
 
 func main() {
