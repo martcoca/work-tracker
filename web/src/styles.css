@@ -15,7 +15,8 @@ button, .button-link {
   display: inline-block; font: inherit; font-weight: 700; padding: 0.7rem 1rem; text-decoration: none;
 }
 button:hover, .button-link:hover { background: #0c4a6e; color: white; }
-button:focus-visible, a:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; opacity: 0.6; }
 button.secondary { background: transparent; border: 1px solid #d5e3ee; }
 .skip-link { background: white; left: 1rem; padding: 0.75rem; position: fixed; top: -5rem; z-index: 10; }
 .skip-link:focus { top: 1rem; }
@@ -57,6 +58,17 @@ th, td { border-top: 1px solid #d9e2ec; padding: 0.9rem; text-align: left; verti
 .event-facts div { display: grid; gap: 0.5rem; grid-template-columns: 6rem 1fr; }
 .event-facts dt { font-weight: 800; }
 .event-facts dd { margin: 0; }
+.authoring { max-width: 56rem; }
+.authoring-form { background: white; border: 1px solid #d9e2ec; border-radius: 0.65rem; display: grid; gap: 0.5rem; padding: clamp(1rem, 4vw, 2rem); }
+.authoring-form label { font-weight: 800; margin-top: 0.65rem; }
+.authoring-form input, .authoring-form textarea { border: 1px solid #829ab1; border-radius: 0.35rem; color: #102a43; font: inherit; padding: 0.7rem; width: 100%; }
+.authoring-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+.authoring-actions .issue { background: #166534; }
+.authoring-actions .issue:hover { background: #14532d; }
+.draft-status, .success-message { background: #ecfdf5; border-left: 0.35rem solid #15803d; padding: 0.8rem 1rem; }
+.error-message { background: #fff1f2; border-left: 0.35rem solid #be123c; display: grid; gap: 0.25rem; margin-top: 1rem; padding: 0.8rem 1rem; }
+.issued-result { margin-bottom: 1rem; }
+.supersession-result { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin-bottom: 1rem; }
 footer { border-top: 1px solid #d9e2ec; color: #486581; padding: 1.5rem max(1.25rem, calc((100% - 72rem) / 2)); }
 code { background: #e6eef5; border-radius: 0.2rem; padding: 0.1rem 0.25rem; }
 @media (max-width: 38rem) {

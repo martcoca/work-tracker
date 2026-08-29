@@ -105,6 +105,33 @@ export interface PacketView {
   packet: PacketRecord;
 }
 
+export interface DraftView {
+  id: string;
+  packet_id: string;
+  initiative_id: string;
+  epic_id: string;
+  target: string;
+  tenant_id: string;
+  parent_id?: string;
+  state: "draft" | "issued";
+  version: number;
+  goal: string;
+  boundary: string;
+  done_when: string;
+  check: string;
+  context: string;
+}
+
+export interface DraftResponse {
+  draft: DraftView;
+}
+
+export interface IssuedResponse {
+  draft: DraftView;
+  packet: PacketRecord;
+  parent?: PacketRecord;
+}
+
 export interface APIErrorBody {
   code: string;
   message: string;

@@ -4,7 +4,7 @@ import { fakeAPI, fakeAuth, render, syntheticUser } from "./test-fixtures";
 
 it("has no automated WCAG 2.2 A or AA violations on list and packet views", async () => {
   const checked: string[] = [];
-  for (const path of ["/", "/initiatives/0004/epics/E02/packets/0004-E02-T01"]) {
+  for (const path of ["/", "/initiatives/0004/epics/E02/packets/0004-E02-T01", "/initiatives/0004/epics/E02/new"]) {
     const { wrapper } = await render(path, fakeAuth(syntheticUser()).auth, fakeAPI());
     const report = await axe.run(wrapper.element, {
       runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"] },
