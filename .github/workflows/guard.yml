@@ -53,3 +53,36 @@ jobs:
             found=$((found + 1))
           done < <(find scripts -name '*.sh' -type f | sort)
           [ "$found" -gt 0 ] || { echo "no shell scripts found"; exit 1; }
+
+  packet-model:
+    name: Packet model
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Test offline
+        env:
+          GOWORK: "off"
+          GOPROXY: "off"
+        run: go test ./...
+
+      - name: Vet offline
+        env:
+          GOWORK: "off"
+          GOPROXY: "off"
+        run: go vet ./...
+
+      - name: Require every model mutant to be killed
+        env:
+          GOWORK: "off"
+          GOPROXY: "off"
+        run: go run ./internal/mutationgate
