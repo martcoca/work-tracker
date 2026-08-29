@@ -147,6 +147,9 @@ func TestPacketDigestIgnoresRecordInsertionOrder(t *testing.T) {
 	if !bytes.Equal(forward.Payload, reverse.Payload) {
 		t.Fatalf("payloads differ:\n%s\n%s", forward.Payload, reverse.Payload)
 	}
+	if strings.Contains(string(forward.Payload), `"comments":null`) || strings.Contains(string(forward.Payload), `"evidence":null`) {
+		t.Fatalf("empty collections serialized as null: %s", forward.Payload)
+	}
 }
 
 func TestPacketVerifierDistinguishesTamperedStaleAndMissing(t *testing.T) {

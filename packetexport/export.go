@@ -295,16 +295,31 @@ func cloneRecords(records []Record) []Record {
 	cloned := make([]Record, len(records))
 	for index, record := range records {
 		cloned[index] = record
-		cloned[index].Comments = append([]Comment(nil), record.Comments...)
-		cloned[index].Evidence = append([]string(nil), record.Evidence...)
-		cloned[index].History = make([]HistoryEvent, len(record.History))
+		if record.Comments != nil {
+			cloned[index].Comments = append([]Comment{}, record.Comments...)
+		}
+		if record.Evidence != nil {
+			cloned[index].Evidence = append([]string{}, record.Evidence...)
+		}
+		if record.History != nil {
+			cloned[index].History = make([]HistoryEvent, len(record.History))
+		}
 		for eventIndex, event := range record.History {
 			cloned[index].History[eventIndex] = event
-			cloned[index].History[eventIndex].Evidence = append([]string(nil), event.Evidence...)
+			if event.Evidence != nil {
+				cloned[index].History[eventIndex].Evidence = append([]string{}, event.Evidence...)
+			}
 			if event.Body != nil {
 				body := *event.Body
 				cloned[index].History[eventIndex].Body = &body
 			}
+			cloned[index].History[eventIndex].TenantID = cloneString(event.TenantID)
+			cloned[index].History[eventIndex].ParentID = cloneString(event.ParentID)
+			cloned[index].History[eventIndex].Text = cloneString(event.Text)
+			cloned[index].History[eventIndex].From = cloneString(event.From)
+			cloned[index].History[eventIndex].To = cloneString(event.To)
+			cloned[index].History[eventIndex].ReplacementID = cloneString(event.ReplacementID)
+			cloned[index].History[eventIndex].Reason = cloneString(event.Reason)
 		}
 		if record.Closure != nil {
 			closure := *record.Closure
