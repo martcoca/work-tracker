@@ -408,7 +408,10 @@ func copyModule(source, destination string) error {
 			return err
 		}
 		if entry.IsDir() {
-			if relative == ".git" || strings.HasPrefix(relative, ".git"+string(filepath.Separator)) {
+			if entry.Name() == ".terraform" || relative == ".git" || relative == "node_modules" || relative == "dist" ||
+				strings.HasPrefix(relative, ".git"+string(filepath.Separator)) ||
+				strings.HasPrefix(relative, "node_modules"+string(filepath.Separator)) ||
+				strings.HasPrefix(relative, "dist"+string(filepath.Separator)) {
 				return filepath.SkipDir
 			}
 			return os.MkdirAll(filepath.Join(destination, relative), 0o755)

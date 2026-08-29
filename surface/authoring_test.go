@@ -49,7 +49,18 @@ func TestHumanComposesEditsIssuesAndSupersedesEntirelyInApp(t *testing.T) {
 	if issueAgain.Code != http.StatusConflict || !strings.Contains(issueAgain.Body.String(), `"code":"draft_issued"`) {
 		t.Fatalf("second issue = %d %s", issueAgain.Code, issueAgain.Body.String())
 	}
-	t.Logf("2. issued draft edit HTTP %d; repeated issue HTTP %d; original goal remains %q", editIssued.Code, issueAgain.Code, issued.Packet.Goal)
+	duplicateHTTP := writeAuthoring(t, service, http.MethodPost, "/api/initiatives/0004/epics/E02/drafts", "human-a", authoringBody("0004-E02-T90", "forbidden duplicate"))
+	duplicate := decodeBody[draftResponse](t, duplicateHTTP).Draft
+	duplicateIssue := writeAuthoring(t, service, http.MethodPost, "/api/drafts/"+duplicate.ID+"/issue", "human-a", map[string]any{"expected_version": duplicate.Version})
+	if duplicateIssue.Code != http.StatusConflict || !strings.Contains(duplicateIssue.Body.String(), `"code":"write_conflict"`) {
+		t.Fatalf("duplicate packet issue = %d %s", duplicateIssue.Code, duplicateIssue.Body.String())
+	}
+	originalAfterAttempts := get(t, service, "/api/authored/packets/0004-E02-T90", "human-a")
+	if originalAfterAttempts.Code != http.StatusOK || !strings.Contains(originalAfterAttempts.Body.String(), `"goal":"Goal final"`) || strings.Contains(originalAfterAttempts.Body.String(), "forbidden") {
+		t.Fatalf("original after edit attempts = %d %s", originalAfterAttempts.Code, originalAfterAttempts.Body.String())
+	}
+	t.Logf("2. issued draft edit HTTP %d; repeated issue HTTP %d; duplicate-id issue HTTP %d; original goal remains %q",
+		editIssued.Code, issueAgain.Code, duplicateIssue.Code, issued.Packet.Goal)
 
 	replacementHTTP := writeAuthoring(t, service, http.MethodPost,
 		"/api/initiatives/0004/epics/E02/packets/0004-E02-T90/supersessions", "human-a",

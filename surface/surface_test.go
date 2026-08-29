@@ -89,6 +89,23 @@ func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 	if err := ValidateAuthoringRoutes(routes); err != nil {
 		t.Fatal(err)
 	}
+	methods := authoringRouteMethods()
+	want := []string{
+		"GET /healthz",
+		"GET /api/initiatives",
+		"GET /api/initiatives/{initiative}",
+		"GET /api/initiatives/{initiative}/epics/{epic}",
+		"GET /api/initiatives/{initiative}/epics/{epic}/packets/{packet}",
+		"GET /api/drafts/{draft}",
+		"GET /api/authored/packets/{packet}",
+		"POST /api/initiatives/{initiative}/epics/{epic}/drafts",
+		"PUT /api/drafts/{draft}",
+		"POST /api/drafts/{draft}/issue",
+		"POST /api/initiatives/{initiative}/epics/{epic}/packets/{packet}/supersessions",
+	}
+	if !reflect.DeepEqual(methods, want) {
+		t.Fatalf("route inventory changed\n got: %v\nwant: %v", methods, want)
+	}
 	readRoutes := make([]Route, 0, len(routes))
 	for _, route := range routes {
 		if route.Method == http.MethodGet {
@@ -98,7 +115,7 @@ func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 	if err := ValidateReadOnly(readRoutes); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("built routes: %v", authoringRouteMethods())
+	t.Logf("built routes: %v", methods)
 	mutated := append(routes, Route{Name: "issued-body-update", Method: http.MethodPut, Pattern: "/api/packets/{packet}"})
 	if err := ValidateAuthoringRoutes(mutated); err == nil {
 		t.Fatal("synthetic issued-packet edit route was accepted")

@@ -51,7 +51,7 @@ func run() error {
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	log.Printf("read-only tracker API listening on %s", server.Addr)
+	log.Printf("tracker human API listening on %s", server.Addr)
 	return server.ListenAndServe()
 }
 
