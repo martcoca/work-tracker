@@ -1,4 +1,4 @@
-// Command mutationgate verifies that packet-model tests detect removed enforcement.
+// Command mutationgate verifies that tests detect removed domain and read-path enforcement.
 // It uses exact, named mutations so it remains standard-library-only and works offline.
 package main
 
@@ -246,6 +246,36 @@ var mutations = []mutation{
 		replacement: `	sort.Slice(records, func(left, right int) bool {
 		return false
 	})`,
+	},
+	{
+		name:        "identity_tenant_claim_required",
+		path:        "identity/verifier.go",
+		original:    `	if strings.TrimSpace(claims.TenantID) == "" {`,
+		replacement: `	if false && strings.TrimSpace(claims.TenantID) == "" {`,
+	},
+	{
+		name:        "render_path_filters_tenant",
+		path:        "surface/view.go",
+		original:    `		if indexed.record.TenantID == principal.TenantID {`,
+		replacement: `		if true {`,
+	},
+	{
+		name: "stale_directory_fails_closed",
+		path: "surface/view.go",
+		original: `	status := snapshot.directoryStatus(now)
+	if status.Stale {
+		return nil, status, ErrDirectoryStale
+	}`,
+		replacement: `	status := snapshot.directoryStatus(now)
+	if false && status.Stale {
+		return nil, status, ErrDirectoryStale
+	}`,
+	},
+	{
+		name:        "built_routes_are_get_only",
+		path:        "surface/handler.go",
+		original:    `	{Name: "packet", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},`,
+		replacement: `	{Name: "packet", Method: http.MethodPost, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},`,
 	},
 }
 

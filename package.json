@@ -1,0 +1,27 @@
+{
+  "name": "work-tracker-surface",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vue-tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:a11y": "vitest run web/src/accessibility.test.ts",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "firebase": "12.18.0",
+    "vue": "3.5.42",
+    "vue-router": "5.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/test-utils": "2.5.0",
+    "axe-core": "4.13.0",
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "vue-tsc": "3.3.11"
+  }
+}
