@@ -122,6 +122,60 @@ var mutations = []mutation{
 		original:    `		PacketTaken{Meta: takenMeta, PacketID: command.PacketID},`,
 		replacement: `		// taken event removed by mutation`,
 	},
+	{
+		name:        "export_lifetime_is_one_hour",
+		path:        "contract/envelope.go",
+		original:    `	expiresAt := publishedAt.Add(FreshnessBound)`,
+		replacement: `	expiresAt := publishedAt.Add(2 * FreshnessBound)`,
+	},
+	{
+		name:        "canonical_keys_are_sorted",
+		path:        "contract/envelope.go",
+		original:    `		sort.Strings(keys)`,
+		replacement: `		sort.Sort(sort.Reverse(sort.StringSlice(keys)))`,
+	},
+	{
+		name:        "unsupported_export_schema_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if envelope.Schema != expectedSchema {`,
+		replacement: `	if false && envelope.Schema != expectedSchema {`,
+	},
+	{
+		name:        "stale_export_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if !now.Before(expiresAt) {`,
+		replacement: `	if false && !now.Before(expiresAt) {`,
+	},
+	{
+		name:        "tampered_payload_rejected",
+		path:        "contract/envelope.go",
+		original:    `	if !equalDigest(envelope.Digest, actualDigest) {`,
+		replacement: `	if false && !equalDigest(envelope.Digest, actualDigest) {`,
+	},
+	{
+		name:        "missing_export_distinguished",
+		path:        "contract/envelope.go",
+		original:    `			return Envelope{}, fmt.Errorf("%w: %s", ErrExportNotFound, path)`,
+		replacement: `			return Envelope{}, fmt.Errorf("%w: %s", ErrInvalidExport, path)`,
+	},
+	{
+		name:        "publication_provenance_required",
+		path:        "contract/envelope.go",
+		original:    `	if err := ValidateSource(publication.Source); err != nil {`,
+		replacement: `	if err := ValidateSource(publication.Source); false && err != nil {`,
+	},
+	{
+		name:        "provenance_repository_is_real_shaped",
+		path:        "contract/provenance.go",
+		original:    `	if len(parts) != 2 || !repositoryPart.MatchString(parts[0]) || !repositoryPart.MatchString(parts[1]) {`,
+		replacement: `	if false && (len(parts) != 2 || !repositoryPart.MatchString(parts[0]) || !repositoryPart.MatchString(parts[1])) {`,
+	},
+	{
+		name:        "provenance_commit_is_full_object_id",
+		path:        "contract/provenance.go",
+		original:    `	if !commitID.MatchString(source.Commit) {`,
+		replacement: `	if false && !commitID.MatchString(source.Commit) {`,
+	},
 }
 
 func main() {
