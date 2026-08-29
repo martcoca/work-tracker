@@ -26,8 +26,12 @@ func (s *deterministicSources) time() time.Time {
 
 func testTracker() *Tracker {
 	sources := &deterministicSources{}
-	return newTracker(sources.time, sources.eventID)
+	return newTracker(sources.time, sources.eventID, allowAllTenants{})
 }
+
+type allowAllTenants struct{}
+
+func (allowAllTenants) ValidateTenantID(string, time.Time) error { return nil }
 
 func testBody(label string) Body {
 	return Body{
@@ -169,7 +173,7 @@ func TestBodyIsFrozenAndTheAPIOffersNoEditOperation(t *testing.T) {
 	}
 
 	wantMethods := []string{
-		"Comment", "DropProjection", "History", "Issue", "Packet",
+		"Comment", "DropProjection", "History", "Issue", "Packet", "Packets",
 		"RebuildProjection", "Supersede", "Take", "Transition",
 	}
 	if got := exportedTrackerMethods(); !reflect.DeepEqual(got, wantMethods) {
@@ -602,6 +606,29 @@ func TestHistoryIsDefensive(t *testing.T) {
 	got := again[len(again)-2].(PacketStatusTransitioned).Evidence
 	if !reflect.DeepEqual(got, []Evidence{"evidence/synthetic.md"}) {
 		t.Fatalf("stored event changed: %v", got)
+	}
+}
+
+func TestPacketsReturnsSortedDefensiveSnapshots(t *testing.T) {
+	tracker := testTracker()
+	issueForTest(t, tracker, "packet-z")
+	issueForTest(t, tracker, "packet-a")
+
+	packets, err := tracker.Packets()
+	if err != nil {
+		t.Fatalf("packets: %v", err)
+	}
+	if got := []PacketID{packets[0].ID(), packets[1].ID()}; !reflect.DeepEqual(got, []PacketID{"packet-a", "packet-z"}) {
+		t.Fatalf("packet order = %v", got)
+	}
+	body := packets[0].Body()
+	body.Goal = "edited"
+	stored, err := tracker.Packet("packet-a")
+	if err != nil {
+		t.Fatalf("packet: %v", err)
+	}
+	if stored.Body().Goal == "edited" {
+		t.Fatal("Packets exposed mutable projected body")
 	}
 }
 

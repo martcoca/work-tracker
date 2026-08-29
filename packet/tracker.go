@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,21 +27,27 @@ type Tracker struct {
 	projection      map[PacketID]Packet
 	eventIDs        map[EventID]struct{}
 	projectionReady bool
+	tenantValidator TenantValidator
 	now             func() time.Time
 	newEventID      func() (EventID, error)
 }
 
-// NewTracker returns an empty tracker backed by an in-memory append-only log.
-func NewTracker() *Tracker {
-	return newTracker(time.Now, randomEventID)
+// NewTracker returns an empty tracker backed by an in-memory append-only log. Issuing is
+// unavailable without a supplied, verified tenant directory.
+func NewTracker(tenantValidator TenantValidator) (*Tracker, error) {
+	if tenantValidator == nil {
+		return nil, ErrTenantValidatorRequired
+	}
+	return newTracker(time.Now, randomEventID, tenantValidator), nil
 }
 
-func newTracker(now func() time.Time, newEventID func() (EventID, error)) *Tracker {
+func newTracker(now func() time.Time, newEventID func() (EventID, error), tenantValidator TenantValidator) *Tracker {
 	return &Tracker{
 		streams:         make(map[PacketID][]Event),
 		projection:      make(map[PacketID]Packet),
 		eventIDs:        make(map[EventID]struct{}),
 		projectionReady: true,
+		tenantValidator: tenantValidator,
 		now:             now,
 		newEventID:      newEventID,
 	}
@@ -64,6 +71,9 @@ func (t *Tracker) Issue(command IssueCommand) (Packet, error) {
 	}
 	if _, exists := t.streams[command.PacketID]; exists {
 		return Packet{}, fmt.Errorf("%w: %q", ErrAlreadyExists, command.PacketID)
+	}
+	if err := t.tenantValidator.ValidateTenantID(string(command.TenantID), t.now().UTC()); err != nil {
+		return Packet{}, err
 	}
 	meta, err := t.nextMetadataLocked(command.Actor)
 	if err != nil {
@@ -186,6 +196,9 @@ func (t *Tracker) Supersede(command SupersedeCommand) (Packet, Packet, error) {
 	if _, exists := t.streams[command.ReplacementID]; exists {
 		return Packet{}, Packet{}, fmt.Errorf("%w: %q", ErrAlreadyExists, command.ReplacementID)
 	}
+	if err := t.tenantValidator.ValidateTenantID(string(command.ReplacementTenant), t.now().UTC()); err != nil {
+		return Packet{}, Packet{}, err
+	}
 	issuedMeta, err := t.nextMetadataLocked(command.Actor)
 	if err != nil {
 		return Packet{}, Packet{}, err
@@ -236,6 +249,24 @@ func (t *Tracker) Packet(id PacketID) (Packet, error) {
 		return Packet{}, fmt.Errorf("%w: %q", ErrNotFound, id)
 	}
 	return clonePacket(packet), nil
+}
+
+// Packets returns defensive snapshots sorted by packet id.
+func (t *Tracker) Packets() ([]Packet, error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if err := t.requireProjectionLocked(); err != nil {
+		return nil, err
+	}
+	packets := make([]Packet, 0, len(t.projection))
+	for _, projected := range t.projection {
+		packets = append(packets, clonePacket(projected))
+	}
+	sort.Slice(packets, func(left, right int) bool {
+		return packets[left].ID() < packets[right].ID()
+	})
+	return packets, nil
 }
 
 // History returns defensive copies of the events for one packet in append order.

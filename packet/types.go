@@ -3,6 +3,12 @@ package packet
 
 import "time"
 
+// TenantValidator checks a tenant directory at the instant a packet is issued. The
+// concrete directory reader lives outside this model package.
+type TenantValidator interface {
+	ValidateTenantID(id string, at time.Time) error
+}
+
 // PacketID identifies a packet. Its contents are opaque to the model.
 type PacketID string
 

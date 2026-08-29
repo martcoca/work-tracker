@@ -176,6 +176,77 @@ var mutations = []mutation{
 		original:    `	if !commitID.MatchString(source.Commit) {`,
 		replacement: `	if false && !commitID.MatchString(source.Commit) {`,
 	},
+	{
+		name:        "tracker_requires_tenant_validator",
+		path:        "packet/tracker.go",
+		original:    `	if tenantValidator == nil {`,
+		replacement: `	if false && tenantValidator == nil {`,
+	},
+	{
+		name: "tenant_checked_at_issue",
+		path: "packet/tracker.go",
+		original: `	if err := t.tenantValidator.ValidateTenantID(string(command.TenantID), t.now().UTC()); err != nil {
+		return Packet{}, err
+	}`,
+		replacement: `	// tenant validation removed by mutation`,
+	},
+	{
+		name: "replacement_tenant_checked_at_issue",
+		path: "packet/tracker.go",
+		original: `	if err := t.tenantValidator.ValidateTenantID(string(command.ReplacementTenant), t.now().UTC()); err != nil {
+		return Packet{}, Packet{}, err
+	}`,
+		replacement: `	// replacement tenant validation removed by mutation`,
+	},
+	{
+		name:        "tenant_directory_exact_fields",
+		path:        "tenant/directory.go",
+		original:    `	decoder.DisallowUnknownFields()`,
+		replacement: `	// unknown tenant fields allowed by mutation`,
+	},
+	{
+		name:        "unknown_tenant_refused",
+		path:        "tenant/directory.go",
+		original:    `	if !exists {`,
+		replacement: `	if false && !exists {`,
+	},
+	{
+		name:        "retired_tenant_refused_distinctly",
+		path:        "tenant/directory.go",
+		original:    `	if record.Status == StatusRetired {`,
+		replacement: `	if false && record.Status == StatusRetired {`,
+	},
+	{
+		name:        "stale_tenant_directory_refused_at_issue",
+		path:        "tenant/directory.go",
+		original:    `	if !at.Before(directory.expiresAt) {`,
+		replacement: `	if false && !at.Before(directory.expiresAt) {`,
+	},
+	{
+		name: "tenant_status_vocabulary_exact",
+		path: "tenant/directory.go",
+		original: `	case StatusActive, StatusSuspended, StatusRetired:
+	default:`,
+		replacement: `	case StatusActive, StatusSuspended, StatusRetired:
+	case Status("deleted"):
+	default:`,
+	},
+	{
+		name:        "packet_export_schema_exact",
+		path:        "packetexport/export.go",
+		original:    `	Schema   = "martcoca.tracker.packets/1"`,
+		replacement: `	Schema   = "martcoca.tracker.packets/2"`,
+	},
+	{
+		name: "packet_payload_sorted_by_id",
+		path: "packetexport/export.go",
+		original: `	sort.Slice(records, func(left, right int) bool {
+		return records[left].ID < records[right].ID
+	})`,
+		replacement: `	sort.Slice(records, func(left, right int) bool {
+		return false
+	})`,
+	},
 }
 
 func main() {
