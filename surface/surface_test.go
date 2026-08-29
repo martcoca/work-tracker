@@ -27,6 +27,7 @@ func TestSyntheticHumanNavigatesOnlyTheirTenant(t *testing.T) {
 	if initiatives.Code != http.StatusOK || !strings.Contains(initiatives.Body.String(), `"id":"0004"`) {
 		t.Fatalf("initiatives response: %d %s", initiatives.Code, initiatives.Body.String())
 	}
+	t.Logf("1. signed synthetic human initiative list: %s", strings.TrimSpace(initiatives.Body.String()))
 	epics := get(t, service, "/api/initiatives/0004", "human-a")
 	if epics.Code != http.StatusOK || !strings.Contains(epics.Body.String(), `"id":"E02"`) {
 		t.Fatalf("initiative response: %d %s", epics.Code, epics.Body.String())
@@ -41,11 +42,13 @@ func TestSyntheticHumanNavigatesOnlyTheirTenant(t *testing.T) {
 			t.Fatalf("packet detail missing %s: %d %s", expected, detail.Code, detail.Body.String())
 		}
 	}
+	t.Logf("2. packet body, status, history, and comments: %s", strings.TrimSpace(detail.Body.String()))
 
 	isolation := get(t, service, "/api/initiatives/0005/epics/E01/packets/0005-E01-T01", "human-a")
 	if isolation.Code != http.StatusNotFound || strings.Contains(isolation.Body.String(), "Tenant B") {
 		t.Fatalf("cross-tenant response = %d %s", isolation.Code, isolation.Body.String())
 	}
+	t.Logf("3. tenant B packet requested as tenant A: HTTP %d %s", isolation.Code, strings.TrimSpace(isolation.Body.String()))
 	if _, err := snapshot.Packet(identity.Principal{TenantID: "tenant-a"}, "0005", "E01", "0005-E01-T01", surfaceClock); !errors.Is(err, ErrTenantIsolation) {
 		t.Fatalf("internal isolation error = %v", err)
 	}
@@ -78,6 +81,7 @@ func TestExpiredHeldDirectoryRendersAgeWithoutTenantData(t *testing.T) {
 	if strings.Contains(response.Body.String(), "Synthetic readable goal") {
 		t.Fatalf("stale response exposed packet data: %s", response.Body.String())
 	}
+	t.Logf("5. expired held directory: HTTP %d %s", response.Code, strings.TrimSpace(response.Body.String()))
 }
 
 func TestBuiltRouteListRejectsEveryMutatingMethod(t *testing.T) {
@@ -178,12 +182,16 @@ func snapshotFromPayloads(t *testing.T, publication contract.Publication, packet
 func testRecord(id, tenantID, goal string) packetexport.Record {
 	body := packetexport.Body{Goal: goal, Boundary: "Synthetic boundary", DoneWhen: "Synthetic check passes", Check: "go test ./...", Context: "Synthetic context"}
 	tenantCopy := tenantID
+	commentText := "Synthetic comment"
 	return packetexport.Record{
 		ID: id, TenantID: tenantID, Goal: body.Goal, Boundary: body.Boundary, DoneWhen: body.DoneWhen,
-		Check: body.Check, Context: body.Context, Status: "not started", Version: 1,
-		Comments: []packetexport.Comment{}, Evidence: []string{}, History: []packetexport.HistoryEvent{{
-			Kind: "packet issued", EventID: "event-" + id, Timestamp: "2035-05-06T12:00:00Z", Actor: "human-synthetic", TenantID: &tenantCopy, Body: &body,
-		}},
+		Check: body.Check, Context: body.Context, Status: "not started", Version: 2,
+		Comments: []packetexport.Comment{{
+			EventID: "comment-" + id, Timestamp: "2035-05-06T12:10:00Z", Actor: "human-synthetic", Text: commentText,
+		}}, Evidence: []string{}, History: []packetexport.HistoryEvent{
+			{Kind: "packet issued", EventID: "event-" + id, Timestamp: "2035-05-06T12:00:00Z", Actor: "human-synthetic", TenantID: &tenantCopy, Body: &body},
+			{Kind: "packet commented", EventID: "comment-" + id, Timestamp: "2035-05-06T12:10:00Z", Actor: "human-synthetic", Text: &commentText},
+		},
 	}
 }
 

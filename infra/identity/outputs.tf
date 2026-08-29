@@ -44,10 +44,9 @@ output "firebase_hosting_configuration" {
 output "apply_prerequisites" {
   description = "Human-owned facts deliberately not created by this plan."
   value = {
-    hostname              = local.hostname
-    dns_ready             = false
-    certificate_ready     = false
-    tenant_claims_ready   = false
-    container_image_ready = false
+    hostname                      = local.hostname
+    dns_and_certificate_managed   = false
+    tenant_claims_managed         = false
+    container_image_built_by_plan = false
   }
 }
