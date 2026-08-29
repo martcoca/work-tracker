@@ -35,6 +35,24 @@ while IFS= read -r path; do
     continue
   fi
 
+  # A packet nobody has taken is still being authored. The freeze exists to stop scope
+  # moving under a running session, so it begins when a session takes the packet — not
+  # when the file is created. This mirrors the rule the tracker product itself uses: a
+  # draft is freely editable, and issue is what freezes it.
+  #
+  # So: if the packet was `not started` at the merge base, the author may still change it.
+  # The amendment is visible in the diff and in the commit message, which is the review
+  # this relies on. Once the status has moved, the body is frozen absolutely.
+  # Both sides must be `not started`. Base alone is not enough: a session could otherwise
+  # take the packet and rewrite its scope in the same pull request, and the base would
+  # still say nobody had taken it.
+  BASE_STATUS="$(git show "$BASE:$path" | sed -n 's/^- \*\*Status:\*\* //p' | head -n 1)"
+  HEAD_STATUS="$(git show "HEAD:$path" | sed -n 's/^- \*\*Status:\*\* //p' | head -n 1)"
+  if [ "$BASE_STATUS" = 'not started' ] && [ "$HEAD_STATUS" = 'not started' ]; then
+    printf 'note: %s amended while not started; body still open to its author\n' "$NAME"
+    continue
+  fi
+
   # Everything except the Status: line must be byte-identical.
   if ! diff -u \
       <(git show "$BASE:$path" | grep -v '^- \*\*Status:\*\* ') \
