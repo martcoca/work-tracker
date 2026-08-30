@@ -1,14 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/martcoca/work-tracker/identity"
+	"github.com/martcoca/work-tracker/runtimeexport"
 	"github.com/martcoca/work-tracker/surface"
 )
 
@@ -23,25 +24,24 @@ func run() error {
 	if projectID == "" {
 		return errors.New("FIREBASE_PROJECT_ID is required")
 	}
-	packetPath := valueOrDefault("PACKET_EXPORT_PATH", "/data/packets.json")
-	directoryPath := valueOrDefault("TENANT_DIRECTORY_PATH", "/data/tenant-directory.json")
-	packetContents, err := os.ReadFile(packetPath)
+	config, err := runtimeexport.ConfigFromEnvironment()
 	if err != nil {
-		return fmt.Errorf("read packet export: %w", err)
+		return err
 	}
-	directoryContents, err := os.ReadFile(directoryPath)
+	exports, err := runtimeexport.New(config, nil, func(err error) {
+		log.Printf("export refresh failed; retaining last verified copies: %v", err)
+	})
 	if err != nil {
-		return fmt.Errorf("read tenant directory: %w", err)
+		return err
 	}
-	snapshot, err := surface.NewSnapshot(packetContents, directoryContents)
-	if err != nil {
-		return fmt.Errorf("load held exports: %w", err)
+	if err := exports.Start(context.Background()); err != nil {
+		return err
 	}
 	verifier, err := identity.NewFirebaseVerifier(projectID, nil)
 	if err != nil {
 		return err
 	}
-	service, err := surface.NewService(snapshot, verifier)
+	service, err := surface.NewServiceFromSource(exports, verifier)
 	if err != nil {
 		return err
 	}
