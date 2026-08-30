@@ -211,7 +211,7 @@ func TestHeldCopiesFailClosedAtOriginalExpiry(t *testing.T) {
 			}
 			now = now.Add(2 * time.Minute)
 			if test.name == AgentGrants {
-				if err := reader.Ready(now); !errors.Is(err, test.want) || !strings.Contains(err.Error(), string(test.name)) {
+				if _, err := reader.VerifiedCopy(test.name, now); !errors.Is(err, test.want) || !strings.Contains(err.Error(), string(test.name)) {
 					t.Fatalf("agent grant expiry = %v", err)
 				}
 			} else {

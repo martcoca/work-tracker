@@ -346,8 +346,8 @@ var mutations = []mutation{
 	{
 		name:        "held_export_expiry_is_rechecked",
 		path:        "runtimeexport/reader.go",
-		original:    `		if !at.Before(held.expiresAt) {`,
-		replacement: `		if false && !at.Before(held.expiresAt) {`,
+		original:    `	if !at.Before(held.expiresAt) {`,
+		replacement: `	if false && !at.Before(held.expiresAt) {`,
 	},
 	{
 		name: "requests_never_wait_for_refresh",

@@ -373,15 +373,31 @@ func (reader *Reader) Ready(at time.Time) error {
 	reader.mu.RLock()
 	defer reader.mu.RUnlock()
 	for _, name := range requiredExports {
-		held, ok := reader.copies[name]
-		if !ok || len(held.contents) == 0 {
-			return fmt.Errorf("%w: %s is missing", ErrNoUsableExport, name)
-		}
-		if !at.Before(held.expiresAt) {
-			return fmt.Errorf("%w: %s expired at %s", contract.ErrStaleExport, name, held.expiresAt.Format(time.RFC3339Nano))
+		if _, err := reader.verifiedCopyLocked(name, at); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// VerifiedCopy gives a downstream authorizer a defensive copy of one held export while
+// enforcing its original freshness bound. It deliberately returns bytes, not a guessed
+// agent-grants payload model; E03 owns that decoding contract.
+func (reader *Reader) VerifiedCopy(name ExportName, at time.Time) ([]byte, error) {
+	reader.mu.RLock()
+	defer reader.mu.RUnlock()
+	return reader.verifiedCopyLocked(name, at)
+}
+
+func (reader *Reader) verifiedCopyLocked(name ExportName, at time.Time) ([]byte, error) {
+	held, ok := reader.copies[name]
+	if !ok || len(held.contents) == 0 {
+		return nil, fmt.Errorf("%w: %s is missing", ErrNoUsableExport, name)
+	}
+	if !at.Before(held.expiresAt) {
+		return nil, fmt.Errorf("%w: %s expired at %s", contract.ErrStaleExport, name, held.expiresAt.Format(time.RFC3339Nano))
+	}
+	return append([]byte(nil), held.contents...), nil
 }
 
 func (reader *Reader) CurrentSnapshot() *surface.Snapshot {
