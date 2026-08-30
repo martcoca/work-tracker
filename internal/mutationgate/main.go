@@ -317,6 +317,60 @@ var mutations = []mutation{
 		original:    `		if !allowed || expectedName != route.Name {`,
 		replacement: `		if false && (!allowed || expectedName != route.Name) {`,
 	},
+	{
+		name:        "all_runtime_exports_are_fetched",
+		path:        "runtimeexport/reader.go",
+		original:    `		{name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema},`,
+		replacement: `		// agent-grants fetch removed by mutation`,
+	},
+	{
+		name:        "cold_start_requires_held_exports",
+		path:        "runtimeexport/reader.go",
+		original:    `	if readyErr := reader.Ready(reader.now().UTC()); readyErr != nil {`,
+		replacement: `	if readyErr := reader.Ready(reader.now().UTC()); false && readyErr != nil {`,
+	},
+	{
+		name:        "runtime_refresh_is_scheduled",
+		path:        "runtimeexport/reader.go",
+		original:    `	go reader.run(ctx)`,
+		replacement: `	// scheduled refresh removed by mutation`,
+	},
+	{
+		name: "failed_refresh_keeps_last_good_copy",
+		path: "runtimeexport/reader.go",
+		original: `		if result.err == nil {
+			held = result.copy`,
+		replacement: `		if true {
+			held = result.copy`,
+	},
+	{
+		name:        "held_export_expiry_is_rechecked",
+		path:        "runtimeexport/reader.go",
+		original:    `	if !at.Before(held.expiresAt) {`,
+		replacement: `	if false && !at.Before(held.expiresAt) {`,
+	},
+	{
+		name: "requests_never_wait_for_refresh",
+		path: "runtimeexport/reader.go",
+		original: `func (reader *Reader) CurrentSnapshot() *surface.Snapshot {
+	reader.mu.RLock()
+	defer reader.mu.RUnlock()
+	return reader.snapshot
+}`,
+		replacement: `func (reader *Reader) CurrentSnapshot() *surface.Snapshot {
+	reader.refreshMu.Lock()
+	defer reader.refreshMu.Unlock()
+	reader.mu.RLock()
+	defer reader.mu.RUnlock()
+	return reader.snapshot
+}`,
+	},
+	{
+		name:        "packet_endpoint_is_configurable",
+		path:        "runtimeexport/reader.go",
+		original:    `	config.PacketURL = valueOrDefault("PACKET_EXPORT_URL", config.PacketURL)`,
+		replacement: `	config.PacketURL = DefaultPacketURL`,
+	},
 }
 
 func main() {

@@ -154,11 +154,15 @@ func (service *Service) createSupersessionDraft(principal identity.Principal, re
 
 func (service *Service) getAuthoredPacket(principal identity.Principal, request *http.Request) (any, error) {
 	now := service.now().UTC()
-	status := service.snapshot.directoryStatus(now)
+	snapshot, err := service.currentSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	status := snapshot.directoryStatus(now)
 	if status.Stale {
 		return PacketView{Directory: status}, ErrDirectoryStale
 	}
-	if err := service.snapshot.directory.ValidateTenantID(principal.TenantID, now); err != nil {
+	if err := snapshot.directory.ValidateTenantID(principal.TenantID, now); err != nil {
 		return PacketView{Directory: status}, err
 	}
 	projected, err := service.authors.Packet(principal, request.PathValue("packet"))
@@ -214,15 +218,19 @@ func decodeAuthoringRequest(request *http.Request, destination any) error {
 }
 
 type snapshotAuthoringScope struct {
-	snapshot *Snapshot
-	targets  map[string]struct{}
+	snapshots SnapshotSource
+	targets   map[string]struct{}
 }
 
 func (scope snapshotAuthoringScope) ValidateScope(tenantID, initiativeID, epicID, target string, at time.Time) error {
 	if _, available := scope.targets[target]; !available {
 		return authoring.ErrInvalidScope
 	}
-	packets, _, err := scope.snapshot.tenantPackets(identity.Principal{TenantID: tenantID}, at)
+	snapshot := scope.snapshots.CurrentSnapshot()
+	if snapshot == nil {
+		return ErrSnapshotUnavailable
+	}
+	packets, _, err := snapshot.tenantPackets(identity.Principal{TenantID: tenantID}, at)
 	if err != nil {
 		return err
 	}
@@ -232,6 +240,16 @@ func (scope snapshotAuthoringScope) ValidateScope(tenantID, initiativeID, epicID
 		}
 	}
 	return authoring.ErrInvalidScope
+}
+
+type dynamicTenantValidator struct{ snapshots SnapshotSource }
+
+func (validator dynamicTenantValidator) ValidateTenantID(id string, at time.Time) error {
+	snapshot := validator.snapshots.CurrentSnapshot()
+	if snapshot == nil {
+		return ErrSnapshotUnavailable
+	}
+	return snapshot.directory.ValidateTenantID(id, at)
 }
 
 func authoringRouteMethods() []string {

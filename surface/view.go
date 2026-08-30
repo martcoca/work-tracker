@@ -31,6 +31,21 @@ type ExportStatus struct {
 	ExpiredBy   int64  `json:"expired_by_seconds,omitempty"`
 }
 
+// HeldExportStatus reports freshness and refresh facts without exposing an export's
+// payload. It is safe to return from the public health route.
+type HeldExportStatus struct {
+	Name         string `json:"name"`
+	Available    bool   `json:"available"`
+	PublishedAt  string `json:"published_at,omitempty"`
+	ExpiresAt    string `json:"expires_at,omitempty"`
+	AgeSeconds   int64  `json:"age_seconds,omitempty"`
+	Stale        bool   `json:"stale"`
+	ExpiredBy    int64  `json:"expired_by_seconds,omitempty"`
+	LastAttempt  string `json:"last_attempt,omitempty"`
+	LastSuccess  string `json:"last_success,omitempty"`
+	RefreshError string `json:"refresh_error,omitempty"`
+}
+
 type PacketSummary struct {
 	ID        string  `json:"id"`
 	Status    string  `json:"status"`
@@ -169,6 +184,21 @@ func envelopeTimes(envelope contract.Envelope) (time.Time, time.Time, error) {
 
 func (snapshot *Snapshot) directoryStatus(now time.Time) ExportStatus {
 	return makeStatus(snapshot.directoryPublished, snapshot.directoryExpires, now)
+}
+
+func (snapshot *Snapshot) heldStatuses(now time.Time) []HeldExportStatus {
+	return []HeldExportStatus{
+		heldStatus("packets", snapshot.packetPublished, snapshot.packetExpires, now),
+		heldStatus("tenant-directory", snapshot.directoryPublished, snapshot.directoryExpires, now),
+	}
+}
+
+func heldStatus(name string, publishedAt, expiresAt, now time.Time) HeldExportStatus {
+	status := makeStatus(publishedAt, expiresAt, now)
+	return HeldExportStatus{
+		Name: name, Available: true, PublishedAt: status.PublishedAt, ExpiresAt: status.ExpiresAt,
+		AgeSeconds: status.AgeSeconds, Stale: status.Stale, ExpiredBy: status.ExpiredBy,
+	}
 }
 
 func makeStatus(publishedAt, expiresAt, now time.Time) ExportStatus {

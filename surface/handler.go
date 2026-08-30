@@ -43,6 +43,8 @@ var allowedMutationRoutes = map[string]string{
 	http.MethodPost + " /api/initiatives/{initiative}/epics/{epic}/packets/{packet}/supersessions": "supersession-draft-create",
 }
 
+var ErrSnapshotUnavailable = errors.New("verified export snapshot is unavailable")
+
 func BuiltRoutes() []Route { return append([]Route(nil), builtRoutes...) }
 
 // ValidateReadOnly mechanically rejects any method capable of changing server state.
@@ -87,30 +89,54 @@ func ValidateAuthoringRoutes(routes []Route) error {
 }
 
 type Service struct {
-	snapshot *Snapshot
-	verifier identity.Verifier
-	authors  *authoring.Workspace
-	now      func() time.Time
+	snapshots SnapshotSource
+	verifier  identity.Verifier
+	authors   *authoring.Workspace
+	now       func() time.Time
+}
+
+// SnapshotSource supplies an already-verified immutable snapshot. Implementations may
+// replace the pointer after a background refresh, but CurrentSnapshot must never fetch.
+type SnapshotSource interface {
+	CurrentSnapshot() *Snapshot
+	ExportStatuses(time.Time) []HeldExportStatus
+}
+
+type staticSnapshotSource struct{ snapshot *Snapshot }
+
+func (source staticSnapshotSource) CurrentSnapshot() *Snapshot { return source.snapshot }
+
+func (source staticSnapshotSource) ExportStatuses(now time.Time) []HeldExportStatus {
+	return source.snapshot.heldStatuses(now)
 }
 
 func NewService(snapshot *Snapshot, verifier identity.Verifier) (*Service, error) {
-	if snapshot == nil || verifier == nil {
+	if snapshot == nil {
+		return nil, errors.New("snapshot and identity verifier are required")
+	}
+	return NewServiceFromSource(staticSnapshotSource{snapshot: snapshot}, verifier)
+}
+
+// NewServiceFromSource keeps outbound refresh work outside handlers while allowing every
+// request and issue-time tenant check to see the latest verified snapshot.
+func NewServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier) (*Service, error) {
+	if snapshots == nil || snapshots.CurrentSnapshot() == nil || verifier == nil {
 		return nil, errors.New("snapshot and identity verifier are required")
 	}
 	if err := ValidateAuthoringRoutes(builtRoutes); err != nil {
 		return nil, err
 	}
-	tracker, err := packet.NewTracker(snapshot.directory)
+	tracker, err := packet.NewTracker(dynamicTenantValidator{snapshots: snapshots})
 	if err != nil {
 		return nil, err
 	}
 	authors, err := authoring.NewWorkspace(tracker, snapshotAuthoringScope{
-		snapshot: snapshot, targets: map[string]struct{}{"work-tracker": {}},
+		snapshots: snapshots, targets: map[string]struct{}{"work-tracker": {}},
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &Service{snapshot: snapshot, verifier: verifier, authors: authors, now: time.Now}, nil
+	return &Service{snapshots: snapshots, verifier: verifier, authors: authors, now: time.Now}, nil
 }
 
 func (service *Service) Handler() http.Handler {
@@ -120,23 +146,50 @@ func (service *Service) Handler() http.Handler {
 		switch route.Name {
 		case "health":
 			handler = func(response http.ResponseWriter, _ *http.Request) {
-				writeJSON(response, http.StatusOK, map[string]string{"status": "ok"})
+				now := service.now().UTC()
+				exports := service.snapshots.ExportStatuses(now)
+				statusCode := http.StatusOK
+				statusText := "ok"
+				if service.snapshots.CurrentSnapshot() == nil || exportsUnavailable(exports) {
+					statusCode = http.StatusServiceUnavailable
+					statusText = "exports unavailable"
+				}
+				writeJSON(response, statusCode, struct {
+					Status  string             `json:"status"`
+					Exports []HeldExportStatus `json:"exports"`
+				}{Status: statusText, Exports: exports})
 			}
 		case "initiatives":
 			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, _ *http.Request) (any, error) {
-				return service.snapshot.Initiatives(principal, service.now().UTC())
+				snapshot, err := service.currentSnapshot()
+				if err != nil {
+					return nil, err
+				}
+				return snapshot.Initiatives(principal, service.now().UTC())
 			})
 		case "initiative":
 			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
-				return service.snapshot.Initiative(principal, request.PathValue("initiative"), service.now().UTC())
+				snapshot, err := service.currentSnapshot()
+				if err != nil {
+					return nil, err
+				}
+				return snapshot.Initiative(principal, request.PathValue("initiative"), service.now().UTC())
 			})
 		case "epic":
 			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
-				return service.snapshot.Epic(principal, request.PathValue("initiative"), request.PathValue("epic"), service.now().UTC())
+				snapshot, err := service.currentSnapshot()
+				if err != nil {
+					return nil, err
+				}
+				return snapshot.Epic(principal, request.PathValue("initiative"), request.PathValue("epic"), service.now().UTC())
 			})
 		case "packet":
 			handler = service.authenticated(http.StatusOK, func(principal identity.Principal, request *http.Request) (any, error) {
-				return service.snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
+				snapshot, err := service.currentSnapshot()
+				if err != nil {
+					return nil, err
+				}
+				return snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
 			})
 		case "draft":
 			handler = service.authenticated(http.StatusOK, service.getDraft)
@@ -156,6 +209,26 @@ func (service *Service) Handler() http.Handler {
 		mux.HandleFunc(route.Method+" "+route.Pattern, handler)
 	}
 	return securityHeaders(mux)
+}
+
+func exportsUnavailable(exports []HeldExportStatus) bool {
+	if len(exports) == 0 {
+		return true
+	}
+	for _, export := range exports {
+		if !export.Available || export.Stale {
+			return true
+		}
+	}
+	return false
+}
+
+func (service *Service) currentSnapshot() (*Snapshot, error) {
+	snapshot := service.snapshots.CurrentSnapshot()
+	if snapshot == nil {
+		return nil, ErrSnapshotUnavailable
+	}
+	return snapshot, nil
 }
 
 type readOperation func(identity.Principal, *http.Request) (any, error)
@@ -182,8 +255,13 @@ func (service *Service) authenticated(successStatus int, operation readOperation
 }
 
 func (service *Service) writeOperationError(response http.ResponseWriter, err error) {
-	status := service.snapshot.directoryStatus(service.now().UTC())
+	var status ExportStatus
+	if snapshot := service.snapshots.CurrentSnapshot(); snapshot != nil {
+		status = snapshot.directoryStatus(service.now().UTC())
+	}
 	switch {
+	case errors.Is(err, ErrSnapshotUnavailable):
+		writeAPIError(response, http.StatusServiceUnavailable, "exports_unavailable", "No verified export snapshot is available.", status)
 	case errors.Is(err, ErrDirectoryStale):
 		writeAPIError(response, http.StatusServiceUnavailable, "directory_stale", "The tenant directory is stale; no tenant data is being shown.", status)
 	case errors.Is(err, ErrPacketExportStale), errors.Is(err, contract.ErrStaleExport):
