@@ -37,6 +37,9 @@ jobs:
         if: github.event_name == 'pull_request'
         run: scripts/check-evidence.sh "${{ github.event.pull_request.base.sha }}"
 
+      - name: The packet index agrees with the packets
+        run: scripts/check-packet-index.sh
+
       - name: Auto-merge awaits every workflow
         run: scripts/check-automerge-coverage.sh
 
