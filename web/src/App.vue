@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { APIError, type APIClient } from "./api";
 import type { AuthPort, AuthUser } from "./auth";
+import AuthoringPanel from "./AuthoringPanel.vue";
 import type {
   APIErrorBody,
   DirectoryStatus,
@@ -100,6 +101,7 @@ function dateText(value: string): string {
         <RouterLink :to="`/initiatives/${route.params.initiative}/epics/${route.params.epic}`">Epic {{ route.params.epic }}</RouterLink>
       </li>
       <li v-if="route.params.packet" aria-current="page">Packet {{ route.params.packet }}</li>
+      <li v-else-if="route.name === 'packet-new'" aria-current="page">New packet</li>
     </ol>
   </nav>
 
@@ -116,8 +118,8 @@ function dateText(value: string): string {
     </section>
 
     <section v-else-if="!user" class="sign-in">
-      <p class="eyebrow">Read-only workspace</p>
-      <h1>See the work, without changing it</h1>
+      <p class="eyebrow">Tenant workspace</p>
+      <h1>See and author the work</h1>
       <p>Sign in through Identity Platform. Your signed tenant claim is checked against the latest held tenant directory before any packet is shown.</p>
       <button type="button" @click="props.auth.signIn">Sign in with Google</button>
     </section>
@@ -167,6 +169,7 @@ function dateText(value: string): string {
       <section v-else-if="epic" aria-labelledby="epic-heading">
         <p class="eyebrow">Initiative {{ epic.initiative_id }}</p>
         <h1 id="epic-heading">Epic {{ epic.id }}</h1>
+        <p><RouterLink class="button-link" :to="`/initiatives/${epic.initiative_id}/epics/${epic.id}/new`">Author packet</RouterLink></p>
         <div class="table-wrap">
           <table>
             <caption>Packets and visible waiting state</caption>
@@ -181,6 +184,14 @@ function dateText(value: string): string {
           </table>
         </div>
       </section>
+
+      <AuthoringPanel
+        v-else-if="route.name === 'packet-new'"
+        :api="props.api"
+        :user="user"
+        :initiative="String(route.params.initiative)"
+        :epic="String(route.params.epic)"
+      />
 
       <article v-else-if="packet" aria-labelledby="packet-heading">
         <header class="packet-header">
@@ -242,5 +253,5 @@ function dateText(value: string): string {
     </template>
   </main>
 
-  <footer><p>Read-only · Data is denied when identity or exports cannot be verified.</p></footer>
+  <footer><p>Issued scope is immutable · Data and writes are denied when identity or exports cannot be verified.</p></footer>
 </template>

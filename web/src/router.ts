@@ -6,6 +6,7 @@ export const routes: RouteRecordRaw[] = [
   { path: "/", name: "initiatives", component: EmptyRoute },
   { path: "/initiatives/:initiative", name: "initiative", component: EmptyRoute },
   { path: "/initiatives/:initiative/epics/:epic", name: "epic", component: EmptyRoute },
+  { path: "/initiatives/:initiative/epics/:epic/new", name: "packet-new", component: EmptyRoute },
   {
     path: "/initiatives/:initiative/epics/:epic/packets/:packet",
     name: "packet",

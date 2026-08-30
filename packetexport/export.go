@@ -106,6 +106,20 @@ func Build(tracker *packet.Tracker, publication contract.Publication) (contract.
 	return buildRecords(records, publication)
 }
 
+// SnapshotRecord returns the same complete projection used by an export for one packet.
+// It lets the human authoring surface render an issued result without publishing an export.
+func SnapshotRecord(tracker *packet.Tracker, id packet.PacketID) (Record, error) {
+	projected, err := tracker.Packet(id)
+	if err != nil {
+		return Record{}, err
+	}
+	history, err := tracker.History(id)
+	if err != nil {
+		return Record{}, err
+	}
+	return makeRecord(projected, history), nil
+}
+
 func buildRecords(records []Record, publication contract.Publication) (contract.Envelope, error) {
 	records = cloneRecords(records)
 	sort.Slice(records, func(left, right int) bool {

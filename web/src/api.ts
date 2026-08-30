@@ -11,6 +11,7 @@ export class APIError extends Error {
 
 export interface APIClient {
   read<T>(path: string, token: string): Promise<T>;
+  write<T>(method: "POST" | "PUT", path: string, token: string, value: unknown): Promise<T>;
 }
 
 export const apiClient: APIClient = {
@@ -18,6 +19,19 @@ export const apiClient: APIClient = {
     const response = await fetch(path, {
       headers: { Authorization: `Bearer ${token}` },
       credentials: "same-origin",
+    });
+    const body = (await response.json()) as T | APIErrorBody;
+    if (!response.ok) {
+      throw new APIError(response.status, body as APIErrorBody);
+    }
+    return body as T;
+  },
+  async write<T>(method: "POST" | "PUT", path: string, token: string, value: unknown): Promise<T> {
+    const response = await fetch(path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(value),
     });
     const body = (await response.json()) as T | APIErrorBody;
     if (!response.ok) {

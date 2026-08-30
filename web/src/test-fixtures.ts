@@ -78,6 +78,9 @@ export function fakeAPI(): APIClient {
     async read<T>(path: string): Promise<T> {
       return (await read(path)) as T;
     },
+    async write<T>(_method: "POST" | "PUT", path: string): Promise<T> {
+      throw new Error(`unexpected write ${path}`);
+    },
   };
 }
 

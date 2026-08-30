@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { APIError, type APIClient } from "./api";
 import { directory, fakeAPI, fakeAuth, render, syntheticUser } from "./test-fixtures";
 
-describe("read-only human surface", () => {
+describe("human surface", () => {
   it("signs a synthetic human in and navigates initiative to epic to packet", async () => {
     const signedOut = fakeAuth(null);
     const { wrapper: signInWrapper } = await render("/", signedOut.auth, fakeAPI());
-    expect(signInWrapper.get("h1").text()).toContain("See the work");
+    expect(signInWrapper.get("h1").text()).toContain("See and author the work");
     await signInWrapper.get("button").trigger("click");
     expect(signedOut.signIn).toHaveBeenCalledOnce();
     signInWrapper.unmount();
@@ -35,6 +35,7 @@ describe("read-only human surface", () => {
   it("renders cross-tenant refusal without the requested packet", async () => {
     const api: APIClient = {
       read: vi.fn().mockRejectedValue(new APIError(404, { code: "not_found", message: "That item is not available to this tenant." })),
+      write: vi.fn(),
     };
     const { wrapper } = await render("/initiatives/0005/epics/E01/packets/0005-E01-T01", fakeAuth(syntheticUser()).auth, api);
     expect(wrapper.get("[role=alert]").text()).toContain("not available to this tenant");
@@ -52,6 +53,7 @@ describe("read-only human surface", () => {
           directory: stale,
         }),
       ),
+      write: vi.fn(),
     };
     const { wrapper } = await render("/", fakeAuth(syntheticUser()).auth, api);
     expect(wrapper.text()).toContain("Tenant directory stale");

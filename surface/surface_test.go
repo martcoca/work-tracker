@@ -84,21 +84,43 @@ func TestExpiredHeldDirectoryRendersAgeWithoutTenantData(t *testing.T) {
 	t.Logf("5. expired held directory: HTTP %d %s", response.Code, strings.TrimSpace(response.Body.String()))
 }
 
-func TestBuiltRouteListRejectsEveryMutatingMethod(t *testing.T) {
+func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 	routes := BuiltRoutes()
-	if err := ValidateReadOnly(routes); err != nil {
+	if err := ValidateAuthoringRoutes(routes); err != nil {
 		t.Fatal(err)
 	}
-	methods := make([]string, len(routes))
-	for index, route := range routes {
-		methods[index] = route.Method + " " + route.Pattern
+	methods := authoringRouteMethods()
+	want := []string{
+		"GET /healthz",
+		"GET /api/initiatives",
+		"GET /api/initiatives/{initiative}",
+		"GET /api/initiatives/{initiative}/epics/{epic}",
+		"GET /api/initiatives/{initiative}/epics/{epic}/packets/{packet}",
+		"GET /api/drafts/{draft}",
+		"GET /api/authored/packets/{packet}",
+		"POST /api/initiatives/{initiative}/epics/{epic}/drafts",
+		"PUT /api/drafts/{draft}",
+		"POST /api/drafts/{draft}/issue",
+		"POST /api/initiatives/{initiative}/epics/{epic}/packets/{packet}/supersessions",
+	}
+	if !reflect.DeepEqual(methods, want) {
+		t.Fatalf("route inventory changed\n got: %v\nwant: %v", methods, want)
+	}
+	readRoutes := make([]Route, 0, len(routes))
+	for _, route := range routes {
+		if route.Method == http.MethodGet {
+			readRoutes = append(readRoutes, route)
+		}
+	}
+	if err := ValidateReadOnly(readRoutes); err != nil {
+		t.Fatal(err)
 	}
 	t.Logf("built routes: %v", methods)
-	mutated := append(routes, Route{Name: "synthetic mutation", Method: http.MethodPost, Pattern: "/api/packets"})
-	if err := ValidateReadOnly(mutated); err == nil {
-		t.Fatal("synthetic POST route was accepted")
+	mutated := append(routes, Route{Name: "issued-body-update", Method: http.MethodPut, Pattern: "/api/packets/{packet}"})
+	if err := ValidateAuthoringRoutes(mutated); err == nil {
+		t.Fatal("synthetic issued-packet edit route was accepted")
 	} else {
-		t.Logf("synthetic POST refused: %v", err)
+		t.Logf("synthetic issued-packet edit route refused: %v", err)
 	}
 }
 
