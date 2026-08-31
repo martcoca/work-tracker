@@ -4,3 +4,6 @@ dist/
 *.tfstate
 *.tfstate.*
 .terraform/
+
+# Real values, credentials and apply inputs. Never committed.
+config/local/
