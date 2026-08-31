@@ -12,7 +12,13 @@ access-controlled state backend before apply.
 The callback is `https://tracker.martcoca.com/__/auth/handler`; the logout return is
 `https://tracker.martcoca.com/signed-out`. DNS and certificate readiness for that hostname,
 pre-provisioned Identity Platform users with signed `tenant_id` custom claims, and an
-immutable reader image containing the last verified exports are apply prerequisites.
+immutable reader runtime image are apply prerequisites. The image contains no export;
+the service fetches the public packet, tenant-directory, and agent-grants objects after
+startup and retains only verified, unexpired copies in memory.
+
+`container_image` refuses tags and accepts only a full `...@sha256:<digest>` reference.
+The public export endpoints and their five-minute refresh / five-second fetch timing have
+safe defaults and remain variable inputs for the Founder. No export credential is accepted.
 
 The checked synthetic plan is produced without contacting a project:
 

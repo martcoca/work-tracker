@@ -33,13 +33,68 @@ variable "runtime_service_account_name" {
 }
 
 variable "container_image" {
-  description = "Immutable tracker reader image containing the last verified exports."
+  description = "Immutable tracker reader runtime image. Exports are fetched after start and are never baked in."
   type        = string
   nullable    = false
 
   validation {
-    condition     = length(trimspace(var.container_image)) > 0
-    error_message = "container_image is required."
+    condition     = can(regex("^[^[:space:]]+@sha256:[0-9a-f]{64}$", var.container_image))
+    error_message = "container_image must be a full immutable registry reference ending in @sha256:<64 lowercase hex>."
+  }
+}
+
+variable "packet_export_url" {
+  description = "Public static packet export fetched by the reader."
+  type        = string
+  default     = "https://tracker.martcoca.com/packets.json"
+
+  validation {
+    condition     = can(regex("^https://[^?#]+$", var.packet_export_url))
+    error_message = "packet_export_url must be a query-free HTTPS URL."
+  }
+}
+
+variable "tenant_directory_url" {
+  description = "Public static tenant-directory export fetched by the reader."
+  type        = string
+  default     = "https://identity.martcoca.com/tenant-directory.json"
+
+  validation {
+    condition     = can(regex("^https://[^?#]+$", var.tenant_directory_url))
+    error_message = "tenant_directory_url must be a query-free HTTPS URL."
+  }
+}
+
+variable "agent_grants_url" {
+  description = "Public static agent-grants export fetched by the reader."
+  type        = string
+  default     = "https://identity.martcoca.com/agent-grants.json"
+
+  validation {
+    condition     = can(regex("^https://[^?#]+$", var.agent_grants_url))
+    error_message = "agent_grants_url must be a query-free HTTPS URL."
+  }
+}
+
+variable "export_refresh_interval" {
+  description = "Go duration between background export refreshes."
+  type        = string
+  default     = "5m"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*(ms|s|m|h)$", var.export_refresh_interval))
+    error_message = "export_refresh_interval must be a positive single-unit Go duration such as 5m."
+  }
+}
+
+variable "export_fetch_timeout" {
+  description = "Go duration limiting each outbound export fetch."
+  type        = string
+  default     = "5s"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*(ms|s|m|h)$", var.export_fetch_timeout))
+    error_message = "export_fetch_timeout must be a positive single-unit Go duration such as 5s."
   }
 }
 
