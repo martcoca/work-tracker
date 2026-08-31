@@ -11,7 +11,7 @@ Check, and enough context to execute without reading another repository.
 | 2 | [`0004-E01-T02.md`](0004-E01-T02.md) | done | The export contract: shared envelope, stable digest, one-hour bound, tenant validated against 0000's directory |
 | 3 | [`0004-E02-T01.md`](0004-E02-T01.md) | done | Sign in, navigate initiative to epic to packet, read-only. **Authored and planned; the Founder applies** |
 | — | [`0004-E02-T04.md`](0004-E02-T04.md) | done | **Take this before E02-T03.** How an export actually reaches the reader: fetch at runtime, hold the last good copy, fail closed when it expires |
-| — | [`0004-E02-T03.md`](0004-E02-T03.md) | not started | **Blocked until E02-T04.** The deployable image: `container_image` is required and nothing produced one, so the whole cloud path is blocked on it |
+| — | [`0004-E02-T03.md`](0004-E02-T03.md) | in progress | The deployable image: `container_image` is required and nothing produced one, so the whole cloud path is blocked on it |
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
 | 6 | [`0004-E03-T02.md`](0004-E03-T02.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable |

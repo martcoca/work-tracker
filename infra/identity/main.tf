@@ -123,12 +123,24 @@ resource "google_cloud_run_v2_service" "reader" {
         value = var.project_id
       }
       env {
-        name  = "PACKET_EXPORT_PATH"
-        value = "/data/packets.json"
+        name  = "PACKET_EXPORT_URL"
+        value = var.packet_export_url
       }
       env {
-        name  = "TENANT_DIRECTORY_PATH"
-        value = "/data/tenant-directory.json"
+        name  = "TENANT_DIRECTORY_URL"
+        value = var.tenant_directory_url
+      }
+      env {
+        name  = "AGENT_GRANTS_URL"
+        value = var.agent_grants_url
+      }
+      env {
+        name  = "EXPORT_REFRESH_INTERVAL"
+        value = var.export_refresh_interval
+      }
+      env {
+        name  = "EXPORT_FETCH_TIMEOUT"
+        value = var.export_fetch_timeout
       }
 
       startup_probe {

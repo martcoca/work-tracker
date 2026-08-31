@@ -1,0 +1,118 @@
+name: Image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Auto-merge uses GITHUB_TOKEN, whose merge raises no push event. It dispatches this
+  # workflow on main explicitly so the merged revision is still the only publish source.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and inspect container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prove publication remains keyless and main-only
+        run: scripts/container/check-workflow.sh
+
+      - name: Build production image
+        run: docker build --tag work-tracker:check .
+
+      - name: Prove minimal non-root layers and credential refusal
+        run: scripts/container/check-image.sh work-tracker:check
+
+      - name: Serve verified fixture exports through the production image
+        run: scripts/container/check-runtime.sh work-tracker:check
+
+  publish:
+    name: Publish immutable image
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate configured repository coordinates
+        id: coordinates
+        env:
+          ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          case "$ARTIFACT_REPOSITORY" in
+            *-docker.pkg.dev/*/*) ;;
+            *) echo '::error::GCP_ARTIFACT_REPOSITORY must be a full Artifact Registry repository path.'; exit 1 ;;
+          esac
+          configured_project="${ARTIFACT_REPOSITORY#*/}"
+          configured_project="${configured_project%%/*}"
+          if [ -z "$PROJECT_ID" ] || [ "$configured_project" != "$PROJECT_ID" ]; then
+            echo '::error::Artifact Registry repository and GCP project variables disagree.'
+            exit 1
+          fi
+          registry="${ARTIFACT_REPOSITORY%%/*}"
+          printf 'registry=%s\n' "$registry" >> "$GITHUB_OUTPUT"
+          printf 'image=%s/work-tracker\n' "$ARTIFACT_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+      - name: Exchange GitHub OIDC identity for a short-lived access token
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PUBLISHER_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 600s
+          create_credentials_file: false
+
+      - name: Log in to the one configured registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.coordinates.outputs.registry }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push merged revision
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.coordinates.outputs.image }}:${{ github.sha }}
+          provenance: false
+          sbom: false
+
+      - name: Record immutable apply input
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE: ${{ steps.coordinates.outputs.image }}
+        run: |
+          set -euo pipefail
+          case "$DIGEST" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo '::error::registry did not return a sha256 digest'; exit 1 ;;
+          esac
+          {
+            echo '## Immutable Cloud Run image'
+            echo
+            printf '`%s@%s`\n' "$IMAGE" "$DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
