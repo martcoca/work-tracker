@@ -165,7 +165,7 @@ func TestPacketVerifierDistinguishesTamperedStaleAndMissing(t *testing.T) {
 	if _, err := Verify(tampered, exportPublication.PublishedAt); !errors.Is(err, contract.ErrDigestMismatch) {
 		t.Fatalf("tampered error = %v, want ErrDigestMismatch", err)
 	}
-	if _, err := Verify(tampered, exportPublication.PublishedAt.Add(time.Hour)); !errors.Is(err, contract.ErrStaleExport) {
+	if _, err := Verify(tampered, exportPublication.PublishedAt.Add(contract.FreshnessBound)); !errors.Is(err, contract.ErrStaleExport) {
 		t.Fatalf("stale error = %v, want ErrStaleExport", err)
 	}
 	if _, err := VerifyFile(filepath.Join(t.TempDir(), "missing.json"), exportPublication.PublishedAt); !errors.Is(err, contract.ErrExportNotFound) {
@@ -240,7 +240,7 @@ func TestExportContractDemonstration(t *testing.T) {
 	t.Logf("3. forward digest=%s reverse digest=%s identical=%v", first.Digest, second.Digest, first.Digest == second.Digest)
 	tampered := []byte(strings.Replace(string(serialized), "goal packet-a", "goal packet-x", 1))
 	_, tamperedErr := Verify(tampered, exportPublication.PublishedAt)
-	_, staleErr := Verify(serialized, exportPublication.PublishedAt.Add(time.Hour))
+	_, staleErr := Verify(serialized, exportPublication.PublishedAt.Add(contract.FreshnessBound))
 	t.Logf("4. changed payload byte refused on digest=%v error=%v", errors.Is(tamperedErr, contract.ErrDigestMismatch), tamperedErr)
 	t.Logf("5. export at expires_at refused as stale=%v distinct=%v error=%v", errors.Is(staleErr, contract.ErrStaleExport), !errors.Is(staleErr, contract.ErrDigestMismatch), staleErr)
 

@@ -100,7 +100,7 @@ func TestDirectoryDistinguishesUnknownRetiredAndStale(t *testing.T) {
 	if err := directory.ValidateTenantID("tenant-retired", directoryPublication.PublishedAt); !errors.Is(err, ErrRetiredTenant) {
 		t.Fatalf("retired error = %v, want ErrRetiredTenant", err)
 	}
-	if err := directory.ValidateTenantID("tenant-active", directoryPublication.PublishedAt.Add(time.Hour)); !errors.Is(err, contract.ErrStaleExport) {
+	if err := directory.ValidateTenantID("tenant-active", directoryPublication.PublishedAt.Add(contract.FreshnessBound)); !errors.Is(err, contract.ErrStaleExport) {
 		t.Fatalf("stale error = %v, want ErrStaleExport", err)
 	}
 }
