@@ -15,7 +15,7 @@ Check, and enough context to execute without reading another repository.
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
 | 6 | [`0004-E03-T02.md`](0004-E03-T02.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable |
-| — | [`0004-E02-T05.md`](0004-E02-T05.md) | not started | **Next.** The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
+| — | [`0004-E02-T05.md`](0004-E02-T05.md) | in progress | **Next.** The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
 
 Take the packet the Founder names. Otherwise take the next one in this table whose
 `Status:` is not `done`. The table is the order; the numbers are only identity.
