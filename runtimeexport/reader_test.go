@@ -261,6 +261,12 @@ func TestStartWithoutReachablePacketServesEmptyThenRefreshesWithoutRestart(t *te
 	defer server.Close()
 	gate := &pathGateTransport{base: server.Client().Transport, unavailable: map[string]bool{"/packets.json": true}}
 	reader := newFixtureReader(t, fixtureConfig(server.URL), &http.Client{Transport: gate}, func() time.Time { return now })
+	if err := reader.Refresh(context.Background()); err != nil {
+		t.Fatalf("expected packet absence was reported as a refresh error: %v", err)
+	}
+	if err := reader.Ready(now); err != nil {
+		t.Fatalf("empty tracker was not ready after verified authority: %v", err)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := reader.Start(ctx); err != nil {
