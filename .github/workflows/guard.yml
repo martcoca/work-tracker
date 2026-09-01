@@ -10,6 +10,10 @@ on:
   # Required: an auto-merge push raises no events, so this must be dispatchable.
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
