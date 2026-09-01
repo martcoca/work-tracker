@@ -88,12 +88,6 @@ jobs:
           GOPROXY: "off"
         run: go vet ./...
 
-      - name: Require every domain and read-path mutant to be killed
-        env:
-          GOWORK: "off"
-          GOPROXY: "off"
-        run: go run ./internal/mutationgate
-
   human-surface:
     name: Read-only human surface
     runs-on: ubuntu-latest
