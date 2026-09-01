@@ -84,6 +84,58 @@ func TestExpiredHeldDirectoryRendersAgeWithoutTenantData(t *testing.T) {
 	t.Logf("5. expired held directory: HTTP %d %s", response.Code, strings.TrimSpace(response.Body.String()))
 }
 
+func TestEmptySnapshotServesAndReportsNoPackets(t *testing.T) {
+	publication := contract.Publication{
+		PublishedAt: surfaceClock.Add(-5 * time.Minute),
+		Source:      contract.Source{Repository: "synthetic/source", Commit: strings.Repeat("a", 40)},
+	}
+	directoryEnvelope, err := contract.Build(tenant.Schema, []tenant.Record{{
+		ID: "tenant-a", Slug: "tenant-a", DisplayName: "Tenant A", Status: tenant.StatusActive,
+		CreatedAt: "2030-01-01T00:00:00Z", Version: 1,
+	}}, publication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directoryBytes, err := contract.Serialize(directoryEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := NewEmptySnapshot(directoryBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := testService(t, snapshot, surfaceClock)
+	response := get(t, service, "/api/initiatives", "human-a")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"initiatives":[]`) {
+		t.Fatalf("empty snapshot response = %d %s", response.Code, response.Body.String())
+	}
+	health := get(t, service, "/healthz", "")
+	if health.Code != http.StatusOK || !strings.Contains(health.Body.String(), `"absent":true`) || !strings.Contains(health.Body.String(), `"service_owned":true`) {
+		t.Fatalf("empty snapshot health = %d %s", health.Code, health.Body.String())
+	}
+}
+
+func TestExportAvailabilityKeepsOnlyOwnedAbsenceReady(t *testing.T) {
+	tests := []struct {
+		name    string
+		exports []HeldExportStatus
+		want    bool
+	}{
+		{name: "owned export absent", exports: []HeldExportStatus{{Name: "packets", ServiceOwned: true, Absent: true}}, want: false},
+		{name: "non-owned optional export absent", exports: []HeldExportStatus{{Name: "authority", Absent: true}}, want: true},
+		{name: "optional export broken", exports: []HeldExportStatus{{Name: "packets", ServiceOwned: true, RefreshError: "invalid export"}}, want: true},
+		{name: "required export absent", exports: []HeldExportStatus{{Name: "authority", Required: true, Absent: true}}, want: true},
+		{name: "held export stale", exports: []HeldExportStatus{{Name: "authority", Available: true, Required: true, Stale: true}}, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := exportsUnavailable(test.exports); got != test.want {
+				t.Fatalf("exportsUnavailable(%+v) = %t, want %t", test.exports, got, test.want)
+			}
+		})
+	}
+}
+
 func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 	routes := BuiltRoutes()
 	if err := ValidateAuthoringRoutes(routes); err != nil {

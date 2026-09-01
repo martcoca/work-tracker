@@ -28,6 +28,28 @@ type fixtureSource struct {
 	calls     int
 }
 
+type pathGateTransport struct {
+	mu          sync.RWMutex
+	base        http.RoundTripper
+	unavailable map[string]bool
+}
+
+func (transport *pathGateTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	transport.mu.RLock()
+	unavailable := transport.unavailable[request.URL.Path]
+	transport.mu.RUnlock()
+	if unavailable {
+		return nil, errors.New("synthetic endpoint unreachable")
+	}
+	return transport.base.RoundTrip(request)
+}
+
+func (transport *pathGateTransport) setUnavailable(path string, unavailable bool) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.unavailable[path] = unavailable
+}
+
 func newFixtureSource(documents map[string][]byte) *fixtureSource {
 	return &fixtureSource{
 		documents: documents, started: make(chan struct{}, 1), release: make(chan struct{}),
@@ -52,7 +74,7 @@ func (source *fixtureSource) ServeHTTP(response http.ResponseWriter, request *ht
 		}
 	}
 	if len(contents) == 0 {
-		http.Error(response, "fixture unavailable", http.StatusServiceUnavailable)
+		http.Error(response, "fixture missing", http.StatusNotFound)
 		return
 	}
 	response.Header().Set("Content-Type", "application/json")
@@ -131,7 +153,7 @@ func TestEveryDependencyRefusesTamperingAndRetainsPreviousCopy(t *testing.T) {
 	paths := map[ExportName]string{
 		Packets: "/packets.json", TenantDirectory: "/tenant-directory.json", AgentGrants: "/agent-grants.json",
 	}
-	for _, name := range requiredExports {
+	for _, name := range allExports {
 		t.Run(string(name), func(t *testing.T) {
 			documents := fixtureDocuments(t, now.Add(-10*time.Minute), now.Add(-10*time.Minute), now.Add(-10*time.Minute), "Last good goal")
 			fixture := newFixtureSource(documents)
@@ -229,20 +251,159 @@ func TestHeldCopiesFailClosedAtOriginalExpiry(t *testing.T) {
 	}
 }
 
-func TestStartRefusesWhenNothingIsReachableOrHeld(t *testing.T) {
+func TestStartWithoutReachablePacketServesEmptyThenRefreshesWithoutRestart(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	fixture := newFixtureSource(map[string][]byte{})
+	documents := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Appeared after startup")
+	packetDocument := documents["/packets.json"]
+	delete(documents, "/packets.json")
+	fixture := newFixtureSource(documents)
 	server := httptest.NewServer(fixture)
 	defer server.Close()
-	reader := newFixtureReader(t, fixtureConfig(server.URL), server.Client(), func() time.Time { return now })
-	err := reader.Start(context.Background())
-	if !errors.Is(err, ErrNoUsableExport) || !strings.Contains(err.Error(), "packets is missing") {
-		t.Fatalf("cold start error = %v", err)
+	gate := &pathGateTransport{base: server.Client().Transport, unavailable: map[string]bool{"/packets.json": true}}
+	reader := newFixtureReader(t, fixtureConfig(server.URL), &http.Client{Transport: gate}, func() time.Time { return now })
+	if err := reader.Refresh(context.Background()); err != nil {
+		t.Fatalf("expected packet absence was reported as a refresh error: %v", err)
 	}
-	if reader.CurrentSnapshot() != nil {
-		t.Fatal("cold start manufactured an empty snapshot")
+	if err := reader.Ready(now); err != nil {
+		t.Fatalf("empty tracker was not ready after verified authority: %v", err)
 	}
-	t.Logf("cold start refused: %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := reader.Start(ctx); err != nil {
+		t.Fatalf("empty tracker start = %v", err)
+	}
+	service := fixtureService(t, reader)
+	initiatives := requestInitiatives(service)
+	if initiatives.Code != http.StatusOK || !strings.Contains(initiatives.Body.String(), `"initiatives":[]`) {
+		t.Fatalf("empty tracker response = %d %s", initiatives.Code, initiatives.Body.String())
+	}
+	health := requestHealth(service)
+	packetStatus := statusFor(t, reader.ExportStatuses(now), Packets)
+	if health.Code != http.StatusOK || packetStatus.Available || packetStatus.Required || !packetStatus.ServiceOwned || !packetStatus.Absent || packetStatus.RefreshError != "" {
+		t.Fatalf("empty tracker status = health %d %s; packet %+v", health.Code, health.Body.String(), packetStatus)
+	}
+	for _, authority := range []ExportName{TenantDirectory, AgentGrants} {
+		status := statusFor(t, reader.ExportStatuses(now), authority)
+		if !status.Available || !status.Required || status.ServiceOwned || status.Absent {
+			t.Fatalf("authority status %s = %+v", authority, status)
+		}
+	}
+	t.Logf("started with unreachable packet export and valid authority: %s", strings.TrimSpace(initiatives.Body.String()))
+
+	fixture.setDocument("/packets.json", packetDocument)
+	gate.setUnavailable("/packets.json", false)
+	if err := reader.Refresh(context.Background()); err != nil {
+		t.Fatalf("refresh after packet publication = %v", err)
+	}
+	refreshed := requestInitiatives(service)
+	if refreshed.Code != http.StatusOK || !strings.Contains(refreshed.Body.String(), `"id":"0004"`) {
+		t.Fatalf("running service did not pick up packet = %d %s", refreshed.Code, refreshed.Body.String())
+	}
+	t.Logf("same service picked up packet on refresh: %s", strings.TrimSpace(refreshed.Body.String()))
+}
+
+func TestPresentInvalidPacketRefusesStartup(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	tests := []struct {
+		name    string
+		packet  func(*testing.T, []byte) []byte
+		wantErr error
+	}{
+		{name: "malformed", packet: func(_ *testing.T, _ []byte) []byte { return []byte("{") }, wantErr: contract.ErrInvalidExport},
+		{name: "wrong digest", packet: tamperPayload, wantErr: contract.ErrDigestMismatch},
+		{name: "expired", packet: func(t *testing.T, _ []byte) []byte {
+			return fixtureDocuments(t, now.Add(-2*time.Hour), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Expired packet")["/packets.json"]
+		}, wantErr: contract.ErrStaleExport},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			documents := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Invalid startup")
+			documents["/packets.json"] = test.packet(t, documents["/packets.json"])
+			fixture := newFixtureSource(documents)
+			server := httptest.NewServer(fixture)
+			defer server.Close()
+			reader := newFixtureReader(t, fixtureConfig(server.URL), server.Client(), func() time.Time { return now })
+			err := reader.Start(context.Background())
+			if !errors.Is(err, test.wantErr) || !strings.Contains(err.Error(), "packets") {
+				t.Fatalf("%s packet startup error = %v", test.name, err)
+			}
+			if reader.CurrentSnapshot() != nil {
+				t.Fatalf("%s packet produced a snapshot", test.name)
+			}
+			if status := statusFor(t, reader.ExportStatuses(now), Packets); status.Absent {
+				t.Fatalf("%s packet was reported absent: %+v", test.name, status)
+			}
+			t.Logf("present %s packet refused: %v", test.name, err)
+		})
+	}
+}
+
+func TestAuthorityExportsRemainStrictAtStartup(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	paths := map[ExportName]string{TenantDirectory: "/tenant-directory.json", AgentGrants: "/agent-grants.json"}
+	for _, authority := range []ExportName{TenantDirectory, AgentGrants} {
+		for _, mode := range []string{"missing", "stale", "tampered", "unreachable"} {
+			t.Run(string(authority)+"/"+mode, func(t *testing.T) {
+				documents := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Authority gate")
+				path := paths[authority]
+				switch mode {
+				case "missing":
+					delete(documents, path)
+				case "stale":
+					stale := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-2*time.Hour), now.Add(-2*time.Hour), "Authority gate")
+					documents[path] = stale[path]
+				case "tampered":
+					documents[path] = tamperPayload(t, documents[path])
+				}
+				fixture := newFixtureSource(documents)
+				server := httptest.NewServer(fixture)
+				defer server.Close()
+				gate := &pathGateTransport{base: server.Client().Transport, unavailable: map[string]bool{path: mode == "unreachable"}}
+				reader := newFixtureReader(t, fixtureConfig(server.URL), &http.Client{Transport: gate}, func() time.Time { return now })
+				err := reader.Start(context.Background())
+				if err == nil || !strings.Contains(err.Error(), string(authority)) {
+					t.Fatalf("%s %s startup error = %v", authority, mode, err)
+				}
+				switch mode {
+				case "stale":
+					if !strings.Contains(err.Error(), contract.ErrStaleExport.Error()) || !strings.Contains(err.Error(), "expired") {
+						t.Fatalf("stale authority error = %v", err)
+					}
+				case "tampered":
+					if !strings.Contains(err.Error(), "digest mismatch") {
+						t.Fatalf("tampered authority error = %v", err)
+					}
+				default:
+					if !errors.Is(err, ErrNoUsableExport) {
+						t.Fatalf("unavailable authority error = %v", err)
+					}
+				}
+				t.Logf("%s %s refused: %v", authority, mode, err)
+			})
+		}
+	}
+}
+
+func TestExportOwnershipAndStartupPolicyAreExplicit(t *testing.T) {
+	reader := &Reader{config: DefaultConfig()}
+	want := map[ExportName]struct {
+		serviceOwned bool
+		required     bool
+	}{
+		Packets:         {serviceOwned: true, required: false},
+		TenantDirectory: {serviceOwned: false, required: true},
+		AgentGrants:     {serviceOwned: false, required: true},
+	}
+	for _, configured := range reader.sources() {
+		expected := want[configured.name]
+		if configured.serviceOwned != expected.serviceOwned || configured.requiredAtStartup != expected.required {
+			t.Fatalf("%s policy = owned:%t required:%t", configured.name, configured.serviceOwned, configured.requiredAtStartup)
+		}
+		delete(want, configured.name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("sources omitted from policy: %+v", want)
+	}
 }
 
 func TestPageDoesNotWaitForHangingRefresh(t *testing.T) {
@@ -417,6 +578,13 @@ func requestInitiatives(service *surface.Service) *httptest.ResponseRecorder {
 func requestPacket(service *surface.Service) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodGet, "/api/initiatives/0004/epics/E02/packets/0004-E02-T04", nil)
 	request.Header.Set("Authorization", "Bearer human-a")
+	response := httptest.NewRecorder()
+	service.Handler().ServeHTTP(response, request)
+	return response
+}
+
+func requestHealth(service *surface.Service) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
 	return response

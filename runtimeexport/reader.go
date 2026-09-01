@@ -32,7 +32,10 @@ const (
 	maximumExportBytes        = 16 << 20
 )
 
-var ErrNoUsableExport = errors.New("no usable export is held")
+var (
+	ErrNoUsableExport    = errors.New("no usable export is held")
+	errExportUnavailable = errors.New("export endpoint is unavailable")
+)
 
 type ExportName string
 
@@ -42,7 +45,7 @@ const (
 	AgentGrants     ExportName = "agent-grants"
 )
 
-var requiredExports = []ExportName{Packets, TenantDirectory, AgentGrants}
+var allExports = []ExportName{Packets, TenantDirectory, AgentGrants}
 
 // Config makes every endpoint and timing choice replaceable without rebuilding the
 // service. The defaults name the public static objects used by the deployed reader.
@@ -99,9 +102,15 @@ func durationOrDefault(name string, fallback time.Duration) (time.Duration, erro
 }
 
 type source struct {
-	name   ExportName
-	url    string
-	schema string
+	name              ExportName
+	url               string
+	schema            string
+	serviceOwned      bool
+	requiredAtStartup bool
+}
+
+func (configured source) allowsAbsence() bool {
+	return configured.serviceOwned && !configured.requiredAtStartup
 }
 
 type heldCopy struct {
@@ -110,7 +119,7 @@ type heldCopy struct {
 	expiresAt    time.Time
 	lastAttempt  time.Time
 	lastSuccess  time.Time
-	refreshError string
+	refreshError error
 }
 
 type fetchResult struct {
@@ -179,15 +188,24 @@ func isLoopback(host string) bool {
 
 func (reader *Reader) sources() []source {
 	return []source{
-		{name: Packets, url: reader.config.PacketURL, schema: packetexport.Schema},
-		{name: TenantDirectory, url: reader.config.TenantDirectoryURL, schema: tenant.Schema},
-		{name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema},
+		{
+			name: Packets, url: reader.config.PacketURL, schema: packetexport.Schema,
+			serviceOwned: true, requiredAtStartup: false,
+		},
+		{
+			name: TenantDirectory, url: reader.config.TenantDirectoryURL, schema: tenant.Schema,
+			serviceOwned: false, requiredAtStartup: true,
+		},
+		{
+			name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema,
+			serviceOwned: false, requiredAtStartup: true,
+		},
 	}
 }
 
-// Start performs the cold-start refresh synchronously. It refuses to start unless every
-// dependency has a verified, unexpired copy, then schedules future refreshes in the
-// background.
+// Start performs the cold-start refresh synchronously. Authority-owned dependencies must
+// have verified, unexpired copies. The tracker-owned packet export may be absent, but a
+// present invalid packet export is still a refusal. Future refreshes run in the background.
 func (reader *Reader) Start(ctx context.Context) error {
 	refreshErr := reader.Refresh(ctx)
 	if readyErr := reader.Ready(reader.now().UTC()); readyErr != nil {
@@ -216,15 +234,17 @@ func (reader *Reader) run(ctx context.Context) {
 }
 
 // Refresh fetches all three sources concurrently and swaps only copies that verify. A bad
-// or unreachable source leaves its previous good copy untouched.
+// or unreachable source leaves its previous good copy untouched. Before any packet copy has
+// existed, an unavailable tracker-owned packet source constructs an explicit empty snapshot.
 func (reader *Reader) Refresh(ctx context.Context) error {
 	reader.refreshMu.Lock()
 	defer reader.refreshMu.Unlock()
 
 	now := reader.now().UTC()
-	results := make(chan fetchResult, len(requiredExports))
+	configuredSources := reader.sources()
+	results := make(chan fetchResult, len(configuredSources))
 	var wait sync.WaitGroup
-	for _, configured := range reader.sources() {
+	for _, configured := range configuredSources {
 		configured := configured
 		wait.Add(1)
 		go func() {
@@ -235,7 +255,7 @@ func (reader *Reader) Refresh(ctx context.Context) error {
 	wait.Wait()
 	close(results)
 
-	byName := make(map[ExportName]fetchResult, len(requiredExports))
+	byName := make(map[ExportName]fetchResult, len(configuredSources))
 	for result := range results {
 		byName[result.source.name] = result
 	}
@@ -243,6 +263,8 @@ func (reader *Reader) Refresh(ctx context.Context) error {
 	reader.mu.RLock()
 	candidate := cloneCopies(reader.copies)
 	currentSnapshot := reader.snapshot
+	previousPacket, hadPreviousPacket := reader.copies[Packets]
+	hadPreviousPacket = hadPreviousPacket && len(previousPacket.contents) != 0
 	reader.mu.RUnlock()
 	for name, result := range byName {
 		if result.err == nil {
@@ -264,13 +286,32 @@ func (reader *Reader) Refresh(ctx context.Context) error {
 					byName[name] = result
 				}
 			}
+			if !hadPreviousPacket {
+				nextSnapshot = nil
+			}
 		} else {
 			nextSnapshot = built
+		}
+	} else if hasDirectory && !hasPackets {
+		packetResult := byName[Packets]
+		if errors.Is(packetResult.err, errExportUnavailable) {
+			built, err := surface.NewEmptySnapshot(directoryCopy.contents)
+			if err != nil {
+				if result := byName[TenantDirectory]; result.err == nil {
+					result.err = fmt.Errorf("construct empty reader snapshot: %w", err)
+					byName[TenantDirectory] = result
+				}
+				nextSnapshot = nil
+			} else {
+				nextSnapshot = built
+			}
+		} else if !hadPreviousPacket {
+			nextSnapshot = nil
 		}
 	}
 
 	reader.mu.Lock()
-	for _, name := range requiredExports {
+	for _, name := range allExports {
 		result := byName[name]
 		held := reader.copies[name]
 		held.lastAttempt = now
@@ -278,9 +319,9 @@ func (reader *Reader) Refresh(ctx context.Context) error {
 			held = result.copy
 			held.lastAttempt = now
 			held.lastSuccess = now
-			held.refreshError = ""
+			held.refreshError = nil
 		} else {
-			held.refreshError = result.err.Error()
+			held.refreshError = result.err
 		}
 		reader.copies[name] = held
 	}
@@ -288,9 +329,10 @@ func (reader *Reader) Refresh(ctx context.Context) error {
 	reader.mu.Unlock()
 
 	var failures []error
-	for _, name := range requiredExports {
-		if err := byName[name].err; err != nil {
-			failures = append(failures, fmt.Errorf("%s: %w", name, err))
+	for _, configured := range configuredSources {
+		expectedAbsence := configured.name == Packets && !hadPreviousPacket && configured.allowsAbsence()
+		if err := byName[configured.name].err; err != nil && !(expectedAbsence && errors.Is(err, errExportUnavailable)) {
+			failures = append(failures, fmt.Errorf("%s: %w", configured.name, err))
 		}
 	}
 	return errors.Join(failures...)
@@ -316,11 +358,14 @@ func (reader *Reader) fetch(parent context.Context, configured source, now time.
 	request.Header.Set("Cache-Control", "no-cache")
 	response, err := reader.client.Do(request)
 	if err != nil {
-		return fetchResult{source: configured, err: errors.New("fetch request failed")}
+		return fetchResult{source: configured, err: unavailableError("fetch request failed")}
 	}
 	defer response.Body.Close()
 	if response.Request == nil || validateEndpoint(response.Request.URL.String()) != nil {
 		return fetchResult{source: configured, err: errors.New("fetch redirected to an unsafe endpoint")}
+	}
+	if response.StatusCode == http.StatusNotFound {
+		return fetchResult{source: configured, err: unavailableError("endpoint returned HTTP 404")}
 	}
 	if response.StatusCode != http.StatusOK {
 		return fetchResult{source: configured, err: fmt.Errorf("endpoint returned HTTP %d", response.StatusCode)}
@@ -343,6 +388,12 @@ func (reader *Reader) fetch(parent context.Context, configured source, now time.
 		expiresAt: expiresAt,
 	}}
 }
+
+type unavailableError string
+
+func (failure unavailableError) Error() string { return string(failure) }
+
+func (failure unavailableError) Is(target error) bool { return target == errExportUnavailable }
 
 func verify(configured source, contents []byte, now time.Time) (contract.Envelope, error) {
 	envelope, err := contract.Verify(contents, configured.schema, now)
@@ -372,8 +423,21 @@ func verify(configured source, contents []byte, now time.Time) (contract.Envelop
 func (reader *Reader) Ready(at time.Time) error {
 	reader.mu.RLock()
 	defer reader.mu.RUnlock()
-	for _, name := range requiredExports {
-		if _, err := reader.verifiedCopyLocked(name, at); err != nil {
+	for _, configured := range reader.sources() {
+		if _, err := reader.verifiedCopyLocked(configured.name, at); err != nil {
+			if configured.requiredAtStartup {
+				return err
+			}
+			if !configured.allowsAbsence() {
+				return fmt.Errorf("export policy is invalid: optional %s is not service-owned", configured.name)
+			}
+			held := reader.copies[configured.name]
+			if errors.Is(err, ErrNoUsableExport) && errors.Is(held.refreshError, errExportUnavailable) {
+				continue
+			}
+			if errors.Is(err, ErrNoUsableExport) && held.refreshError != nil {
+				return fmt.Errorf("%s: %w", configured.name, held.refreshError)
+			}
 			return err
 		}
 	}
@@ -409,12 +473,20 @@ func (reader *Reader) CurrentSnapshot() *surface.Snapshot {
 func (reader *Reader) ExportStatuses(now time.Time) []surface.HeldExportStatus {
 	reader.mu.RLock()
 	defer reader.mu.RUnlock()
-	statuses := make([]surface.HeldExportStatus, 0, len(requiredExports))
-	for _, name := range requiredExports {
+	configuredSources := reader.sources()
+	statuses := make([]surface.HeldExportStatus, 0, len(configuredSources))
+	for _, configured := range configuredSources {
+		name := configured.name
 		held, available := reader.copies[name]
+		isAvailable := available && len(held.contents) != 0
+		absent := !isAvailable && configured.allowsAbsence() && errors.Is(held.refreshError, errExportUnavailable)
 		status := surface.HeldExportStatus{
-			Name: string(name), Available: available && len(held.contents) != 0,
-			RefreshError: held.refreshError,
+			Name: string(name), Available: isAvailable,
+			Required: configured.requiredAtStartup, ServiceOwned: configured.serviceOwned,
+			Absent: absent,
+		}
+		if held.refreshError != nil && !absent {
+			status.RefreshError = held.refreshError.Error()
 		}
 		if !held.lastAttempt.IsZero() {
 			status.LastAttempt = held.lastAttempt.Format(time.RFC3339Nano)

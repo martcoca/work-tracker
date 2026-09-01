@@ -318,10 +318,73 @@ var mutations = []mutation{
 		replacement: `		if false && (!allowed || expectedName != route.Name) {`,
 	},
 	{
-		name:        "all_runtime_exports_are_fetched",
-		path:        "runtimeexport/reader.go",
-		original:    `		{name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema},`,
+		name: "all_runtime_exports_are_fetched",
+		path: "runtimeexport/reader.go",
+		original: `		{
+			name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema,
+			serviceOwned: false, requiredAtStartup: true,
+		},`,
 		replacement: `		// agent-grants fetch removed by mutation`,
+	},
+	{
+		name:        "owned_packet_is_optional_at_startup",
+		path:        "runtimeexport/reader.go",
+		original:    `			serviceOwned: true, requiredAtStartup: false,`,
+		replacement: `			serviceOwned: true, requiredAtStartup: true,`,
+	},
+	{
+		name: "tenant_directory_remains_required_at_startup",
+		path: "runtimeexport/reader.go",
+		original: `		{
+			name: TenantDirectory, url: reader.config.TenantDirectoryURL, schema: tenant.Schema,
+			serviceOwned: false, requiredAtStartup: true,
+		},`,
+		replacement: `		{
+			name: TenantDirectory, url: reader.config.TenantDirectoryURL, schema: tenant.Schema,
+			serviceOwned: false, requiredAtStartup: false,
+		},`,
+	},
+	{
+		name: "agent_grants_remain_required_at_startup",
+		path: "runtimeexport/reader.go",
+		original: `		{
+			name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema,
+			serviceOwned: false, requiredAtStartup: true,
+		},`,
+		replacement: `		{
+			name: AgentGrants, url: reader.config.AgentGrantsURL, schema: AgentGrantsSchema,
+			serviceOwned: false, requiredAtStartup: false,
+		},`,
+	},
+	{
+		name:        "present_invalid_packet_is_not_absent",
+		path:        "runtimeexport/reader.go",
+		original:    `			if errors.Is(err, ErrNoUsableExport) && errors.Is(held.refreshError, errExportUnavailable) {`,
+		replacement: `			if errors.Is(err, ErrNoUsableExport) && held.refreshError != nil {`,
+	},
+	{
+		name:        "owned_packet_absence_is_not_refresh_failure",
+		path:        "runtimeexport/reader.go",
+		original:    `		if err := byName[configured.name].err; err != nil && !(expectedAbsence && errors.Is(err, errExportUnavailable)) {`,
+		replacement: `		if err := byName[configured.name].err; err != nil {`,
+	},
+	{
+		name:        "empty_snapshot_is_explicit",
+		path:        "runtimeexport/reader.go",
+		original:    `			built, err := surface.NewEmptySnapshot(directoryCopy.contents)`,
+		replacement: `			built, err := surface.NewSnapshot(nil, directoryCopy.contents)`,
+	},
+	{
+		name:        "empty_snapshot_skips_packet_expiry",
+		path:        "surface/view.go",
+		original:    `	if snapshot.packetAvailable && !now.Before(snapshot.packetExpires) {`,
+		replacement: `	if !now.Before(snapshot.packetExpires) {`,
+	},
+	{
+		name:        "owned_absence_keeps_health_ready",
+		path:        "surface/handler.go",
+		original:    `		if export.Stale || (!export.Available && (export.Required || !export.ServiceOwned || !export.Absent)) {`,
+		replacement: `		if export.Stale || !export.Available {`,
 	},
 	{
 		name:        "cold_start_requires_held_exports",
