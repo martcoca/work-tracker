@@ -63,8 +63,8 @@ func TestSharedEnvelopeAndExactFreshnessBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := expiresAt.Sub(publishedAt); got != time.Hour {
-		t.Fatalf("expires_at - published_at = %s, want %s", got, time.Hour)
+	if got := expiresAt.Sub(publishedAt); got != FreshnessBound {
+		t.Fatalf("expires_at - published_at = %s, want %s", got, FreshnessBound)
 	}
 	if envelope.Digest != DigestCanonical(envelope.Payload) {
 		t.Fatalf("digest %q does not cover canonical payload %s", envelope.Digest, envelope.Payload)
@@ -115,7 +115,7 @@ func TestVerifierDistinguishesTamperedStaleAndMissingExports(t *testing.T) {
 	if _, err := Verify(tampered, testSchema, freshTime); !errors.Is(err, ErrDigestMismatch) {
 		t.Fatalf("tampered error = %v, want ErrDigestMismatch", err)
 	}
-	if _, err := Verify(tampered, testSchema, testPublication.PublishedAt.Add(time.Hour)); !errors.Is(err, ErrStaleExport) {
+	if _, err := Verify(tampered, testSchema, testPublication.PublishedAt.Add(FreshnessBound)); !errors.Is(err, ErrStaleExport) {
 		t.Fatalf("stale error = %v, want ErrStaleExport", err)
 	}
 	missing := filepath.Join(t.TempDir(), "missing.json")

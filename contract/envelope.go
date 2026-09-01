@@ -19,8 +19,14 @@ import (
 	"time"
 )
 
-// FreshnessBound is shared with the identity product. It is part of the wire contract.
-const FreshnessBound = time.Hour
+// FreshnessBound is shared with the identity product. It is part of the wire contract,
+// enforced independently on both sides, so it may only change in step with the
+// publisher's EXPORT_LIFETIME_MS.
+//
+// It was one hour, which obliged the publisher to republish hourly forever or every
+// consumer would fail closed. See ADR-0053: the window is now 48 hours with a daily
+// scheduled publish, leaving a full day of slack for a failed run.
+const FreshnessBound = 48 * time.Hour
 
 var (
 	ErrExportNotFound    = errors.New("export not found")
@@ -154,7 +160,7 @@ func Verify(contents []byte, expectedSchema string, now time.Time) (Envelope, er
 		return Envelope{}, fmt.Errorf("%w: expires_at must be RFC 3339", ErrInvalidExport)
 	}
 	if expiresAt.Sub(publishedAt) != FreshnessBound {
-		return Envelope{}, fmt.Errorf("%w: expires_at must be exactly one hour after published_at", ErrInvalidExport)
+		return Envelope{}, fmt.Errorf("%w: expires_at must be exactly FreshnessBound after published_at", ErrInvalidExport)
 	}
 	if now.IsZero() {
 		return Envelope{}, fmt.Errorf("%w: current time is required", ErrInvalidExport)

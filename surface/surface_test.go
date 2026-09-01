@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -67,13 +68,22 @@ func TestUnknownAndRetiredTenantAreRefusedDifferently(t *testing.T) {
 }
 
 func TestExpiredHeldDirectoryRendersAgeWithoutTenantData(t *testing.T) {
-	published := surfaceClock.Add(-2 * time.Hour)
+	published := surfaceClock.Add(-2 * contract.FreshnessBound)
 	service := testService(t, testSnapshot(t, published), surfaceClock)
 	response := get(t, service, "/api/initiatives", "human-a")
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
-	for _, expected := range []string{`"code":"directory_stale"`, `"age_seconds":7200`, `"stale":true`, `"expired_by_seconds":3600`} {
+	// Derived from the shared bound rather than written out, so a change to the export
+	// lifetime cannot leave this asserting a window the contract no longer uses.
+	ageSeconds := int((2 * contract.FreshnessBound).Seconds())
+	expiredBySeconds := int((2*contract.FreshnessBound - contract.FreshnessBound).Seconds())
+	for _, expected := range []string{
+		`"code":"directory_stale"`,
+		fmt.Sprintf(`"age_seconds":%d`, ageSeconds),
+		`"stale":true`,
+		fmt.Sprintf(`"expired_by_seconds":%d`, expiredBySeconds),
+	} {
 		if !strings.Contains(response.Body.String(), expected) {
 			t.Fatalf("stale response missing %s: %s", expected, response.Body.String())
 		}

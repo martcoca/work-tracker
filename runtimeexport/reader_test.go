@@ -217,9 +217,9 @@ func TestHeldCopiesFailClosedAtOriginalExpiry(t *testing.T) {
 		published map[ExportName]time.Time
 		want      error
 	}{
-		{name: Packets, published: map[ExportName]time.Time{Packets: base.Add(-59 * time.Minute), TenantDirectory: base.Add(-5 * time.Minute), AgentGrants: base.Add(-5 * time.Minute)}, want: surface.ErrPacketExportStale},
-		{name: TenantDirectory, published: map[ExportName]time.Time{Packets: base.Add(-5 * time.Minute), TenantDirectory: base.Add(-59 * time.Minute), AgentGrants: base.Add(-5 * time.Minute)}, want: surface.ErrDirectoryStale},
-		{name: AgentGrants, published: map[ExportName]time.Time{Packets: base.Add(-5 * time.Minute), TenantDirectory: base.Add(-5 * time.Minute), AgentGrants: base.Add(-59 * time.Minute)}, want: contract.ErrStaleExport},
+		{name: Packets, published: map[ExportName]time.Time{Packets: base.Add(-contract.FreshnessBound + time.Minute), TenantDirectory: base.Add(-5 * time.Minute), AgentGrants: base.Add(-5 * time.Minute)}, want: surface.ErrPacketExportStale},
+		{name: TenantDirectory, published: map[ExportName]time.Time{Packets: base.Add(-5 * time.Minute), TenantDirectory: base.Add(-contract.FreshnessBound + time.Minute), AgentGrants: base.Add(-5 * time.Minute)}, want: surface.ErrDirectoryStale},
+		{name: AgentGrants, published: map[ExportName]time.Time{Packets: base.Add(-5 * time.Minute), TenantDirectory: base.Add(-5 * time.Minute), AgentGrants: base.Add(-contract.FreshnessBound + time.Minute)}, want: contract.ErrStaleExport},
 	}
 	for _, test := range tests {
 		t.Run(string(test.name), func(t *testing.T) {
@@ -312,7 +312,7 @@ func TestPresentInvalidPacketRefusesStartup(t *testing.T) {
 		{name: "malformed", packet: func(_ *testing.T, _ []byte) []byte { return []byte("{") }, wantErr: contract.ErrInvalidExport},
 		{name: "wrong digest", packet: tamperPayload, wantErr: contract.ErrDigestMismatch},
 		{name: "expired", packet: func(t *testing.T, _ []byte) []byte {
-			return fixtureDocuments(t, now.Add(-2*time.Hour), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Expired packet")["/packets.json"]
+			return fixtureDocuments(t, now.Add(-2*contract.FreshnessBound), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Expired packet")["/packets.json"]
 		}, wantErr: contract.ErrStaleExport},
 	}
 	for _, test := range tests {
@@ -350,7 +350,7 @@ func TestAuthorityExportsRemainStrictAtStartup(t *testing.T) {
 				case "missing":
 					delete(documents, path)
 				case "stale":
-					stale := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-2*time.Hour), now.Add(-2*time.Hour), "Authority gate")
+					stale := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-2*contract.FreshnessBound), now.Add(-2*contract.FreshnessBound), "Authority gate")
 					documents[path] = stale[path]
 				case "tampered":
 					documents[path] = tamperPayload(t, documents[path])
