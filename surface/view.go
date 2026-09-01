@@ -36,6 +36,9 @@ type ExportStatus struct {
 type HeldExportStatus struct {
 	Name         string `json:"name"`
 	Available    bool   `json:"available"`
+	Required     bool   `json:"required"`
+	ServiceOwned bool   `json:"service_owned"`
+	Absent       bool   `json:"absent"`
 	PublishedAt  string `json:"published_at,omitempty"`
 	ExpiresAt    string `json:"expires_at,omitempty"`
 	AgeSeconds   int64  `json:"age_seconds,omitempty"`
@@ -104,6 +107,7 @@ type Snapshot struct {
 	directory          *tenant.Directory
 	directoryPublished time.Time
 	directoryExpires   time.Time
+	packetAvailable    bool
 	packetPublished    time.Time
 	packetExpires      time.Time
 	packets            []indexedPacket
@@ -120,6 +124,32 @@ func NewSnapshot(packetContents, directoryContents []byte) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
+	snapshot, err := NewEmptySnapshot(directoryContents)
+	if err != nil {
+		return nil, err
+	}
+	packetPublished, packetExpires, err := envelopeTimes(verifiedPackets.Envelope)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.packetAvailable = true
+	snapshot.packetPublished = packetPublished
+	snapshot.packetExpires = packetExpires
+	snapshot.packets = make([]indexedPacket, 0, len(verifiedPackets.Packets))
+	for _, record := range verifiedPackets.Packets {
+		matches := packetIDPattern.FindStringSubmatch(record.ID)
+		if matches == nil {
+			return nil, fmt.Errorf("%w: packet id %q does not name initiative, epic, and task", contract.ErrInvalidExport, record.ID)
+		}
+		indexed := indexedPacket{record: record, initiative: matches[1], epic: matches[2]}
+		snapshot.packets = append(snapshot.packets, indexed)
+	}
+	return snapshot, nil
+}
+
+// NewEmptySnapshot creates the explicit first-run state: authority is verified, but this
+// tracker has not published its service-owned packet export yet.
+func NewEmptySnapshot(directoryContents []byte) (*Snapshot, error) {
 	directoryAt, err := inspectionTime(directoryContents)
 	if err != nil {
 		return nil, fmt.Errorf("inspect tenant directory: %w", err)
@@ -136,24 +166,10 @@ func NewSnapshot(packetContents, directoryContents []byte) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	packetPublished, packetExpires, err := envelopeTimes(verifiedPackets.Envelope)
-	if err != nil {
-		return nil, err
-	}
-	snapshot := &Snapshot{
+	return &Snapshot{
 		directory: directory, directoryPublished: directoryPublished, directoryExpires: directoryExpires,
-		packetPublished: packetPublished, packetExpires: packetExpires,
-		packets: make([]indexedPacket, 0, len(verifiedPackets.Packets)),
-	}
-	for _, record := range verifiedPackets.Packets {
-		matches := packetIDPattern.FindStringSubmatch(record.ID)
-		if matches == nil {
-			return nil, fmt.Errorf("%w: packet id %q does not name initiative, epic, and task", contract.ErrInvalidExport, record.ID)
-		}
-		indexed := indexedPacket{record: record, initiative: matches[1], epic: matches[2]}
-		snapshot.packets = append(snapshot.packets, indexed)
-	}
-	return snapshot, nil
+		packets: []indexedPacket{},
+	}, nil
 }
 
 func inspectionTime(contents []byte) (time.Time, error) {
@@ -187,16 +203,21 @@ func (snapshot *Snapshot) directoryStatus(now time.Time) ExportStatus {
 }
 
 func (snapshot *Snapshot) heldStatuses(now time.Time) []HeldExportStatus {
-	return []HeldExportStatus{
-		heldStatus("packets", snapshot.packetPublished, snapshot.packetExpires, now),
-		heldStatus("tenant-directory", snapshot.directoryPublished, snapshot.directoryExpires, now),
+	statuses := []HeldExportStatus{
+		{Name: "packets", Required: false, ServiceOwned: true, Absent: !snapshot.packetAvailable},
+		heldStatus("tenant-directory", snapshot.directoryPublished, snapshot.directoryExpires, now, true, false),
 	}
+	if snapshot.packetAvailable {
+		statuses[0] = heldStatus("packets", snapshot.packetPublished, snapshot.packetExpires, now, false, true)
+	}
+	return statuses
 }
 
-func heldStatus(name string, publishedAt, expiresAt, now time.Time) HeldExportStatus {
+func heldStatus(name string, publishedAt, expiresAt, now time.Time, required, serviceOwned bool) HeldExportStatus {
 	status := makeStatus(publishedAt, expiresAt, now)
 	return HeldExportStatus{
-		Name: name, Available: true, PublishedAt: status.PublishedAt, ExpiresAt: status.ExpiresAt,
+		Name: name, Available: true, Required: required, ServiceOwned: serviceOwned,
+		PublishedAt: status.PublishedAt, ExpiresAt: status.ExpiresAt,
 		AgeSeconds: status.AgeSeconds, Stale: status.Stale, ExpiredBy: status.ExpiredBy,
 	}
 }
@@ -224,7 +245,7 @@ func (snapshot *Snapshot) tenantPackets(principal identity.Principal, now time.T
 	if err := snapshot.directory.ValidateTenantID(principal.TenantID, now); err != nil {
 		return nil, status, err
 	}
-	if !now.Before(snapshot.packetExpires) {
+	if snapshot.packetAvailable && !now.Before(snapshot.packetExpires) {
 		return nil, status, ErrPacketExportStale
 	}
 	packets := make([]indexedPacket, 0)

@@ -216,7 +216,7 @@ func exportsUnavailable(exports []HeldExportStatus) bool {
 		return true
 	}
 	for _, export := range exports {
-		if !export.Available || export.Stale {
+		if export.Stale || (!export.Available && (export.Required || !export.ServiceOwned || !export.Absent)) {
 			return true
 		}
 	}

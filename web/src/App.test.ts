@@ -43,6 +43,19 @@ describe("human surface", () => {
     wrapper.unmount();
   });
 
+  it("names a verified empty tracker instead of implying a failed read", async () => {
+    const api: APIClient = {
+      read: vi.fn().mockResolvedValue({ directory, initiatives: [] }),
+      write: vi.fn(),
+    };
+    const { wrapper } = await render("/", fakeAuth(syntheticUser()).auth, api);
+    const empty = wrapper.get("[role=status].empty-state");
+    expect(empty.get("h2").text()).toBe("This tracker holds no packets");
+    expect(empty.text()).toContain("empty tracker, not a failed read");
+    expect(wrapper.find("[role=alert]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it("states the age of an expired held directory and exposes no work", async () => {
     const stale = { ...directory, age_seconds: 7200, stale: true, expired_by_seconds: 3600 };
     const api: APIClient = {

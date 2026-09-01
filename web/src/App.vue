@@ -145,7 +145,11 @@ function dateText(value: string): string {
         <p class="eyebrow">Portfolio</p>
         <h1 id="initiatives-heading">Initiatives</h1>
         <p class="lede">Only initiatives belonging to your verified tenant are listed.</p>
-        <ul class="card-grid">
+        <div v-if="initiatives.initiatives.length === 0" class="empty-state" role="status">
+          <h2>This tracker holds no packets</h2>
+          <p>The service currently holds no packet export. This is an empty tracker, not a failed read.</p>
+        </div>
+        <ul v-else class="card-grid">
           <li v-for="item in initiatives.initiatives" :key="item.id" class="card">
             <h2><RouterLink :to="`/initiatives/${item.id}`">Initiative {{ item.id }}</RouterLink></h2>
             <p>{{ item.epic_count }} epics · {{ item.packet_count }} packets</p>
