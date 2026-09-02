@@ -219,7 +219,18 @@ jobs:
           gcloud run services describe tracker-reader --project="$PROJECT_ID" --region="$REGION" \
             --format='value(spec.template.metadata.annotations)' | grep -F "$GITHUB_SHA"
 
-      - name: Refresh Hosting's Cloud Run pin after apply
+      # `tofu output` reads state, so the configuration written before the apply is
+      # whatever the *previous* apply left behind. Any change to the Hosting config —
+      # headers, rewrites, the Content-Security-Policy — therefore published one deploy
+      # late: the deploy that introduced it applied it to state, and only the next,
+      # unrelated deploy shipped it. Rewriting the file here, after the apply, publishes
+      # the configuration this commit actually asked for.
+      - name: Rewrite Firebase CLI configuration from the applied state
+        run: >-
+          tofu -chdir=infra/deploy output -raw firebase_hosting_configuration
+          > firebase.deploy.json
+
+      - name: Refresh Hosting's Cloud Run pin and configuration after apply
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: >-
