@@ -21,6 +21,7 @@ require_literal 'create_credentials_file: false'
 require_literal 'create_credentials_file: true'
 require_literal '${{ vars.GCP_PUBLISHER_SERVICE_ACCOUNT }}'
 require_literal '${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}'
+require_literal 'go run ./cmd/publish-packet-export'
 require_literal 'go run ./cmd/verify-runtime-exports'
 require_literal 'go run ./internal/deployguard'
 require_literal 'firebase deploy --only hosting'
@@ -45,20 +46,28 @@ line_of() {
 BUILD_LINE="$(line_of 'docker build --tag "$IMAGE_TAG" .')"
 SCAN_LINE="$(line_of 'scripts/container/check-image.sh "$IMAGE_TAG"')"
 PUSH_LINE="$(line_of 'docker push "$IMAGE_TAG"')"
+FRONTEND_LINE="$(line_of 'npm run build')"
+EXPORT_LINE="$(line_of 'go run ./cmd/publish-packet-export')"
 VERIFY_LINE="$(line_of 'go run ./cmd/verify-runtime-exports')"
 GUARD_LINE="$(line_of 'go run ./internal/deployguard')"
 APPLY_LINE="$(line_of 'tofu -chdir=infra/deploy apply')"
-HOSTING_LINE="$(line_of 'firebase deploy --only hosting')"
+HOSTING_COUNT="$(grep -Fc -- 'firebase deploy --only hosting' "$WORKFLOW")"
+PREFLIGHT_HOSTING_LINE="$(grep -nF -- 'firebase deploy --only hosting' "$WORKFLOW" | sed -n '1s/:.*//p')"
+FINAL_HOSTING_LINE="$(grep -nF -- 'firebase deploy --only hosting' "$WORKFLOW" | sed -n '2s/:.*//p')"
 
 if [ -z "$BUILD_LINE" ] || [ -z "$SCAN_LINE" ] || [ -z "$PUSH_LINE" ] ||
-   [ -z "$VERIFY_LINE" ] || [ -z "$GUARD_LINE" ] || [ -z "$APPLY_LINE" ] || [ -z "$HOSTING_LINE" ]; then
+   [ -z "$FRONTEND_LINE" ] || [ -z "$EXPORT_LINE" ] || [ -z "$VERIFY_LINE" ] ||
+   [ -z "$GUARD_LINE" ] || [ -z "$APPLY_LINE" ] || [ "$HOSTING_COUNT" -ne 2 ] ||
+   [ -z "$PREFLIGHT_HOSTING_LINE" ] || [ -z "$FINAL_HOSTING_LINE" ]; then
   echo 'error: ordered delivery steps could not be located' >&2
   exit 1
 fi
 if ! [ "$BUILD_LINE" -lt "$SCAN_LINE" ] || ! [ "$SCAN_LINE" -lt "$PUSH_LINE" ] ||
-   ! [ "$PUSH_LINE" -lt "$VERIFY_LINE" ] || ! [ "$VERIFY_LINE" -lt "$GUARD_LINE" ] ||
-   ! [ "$GUARD_LINE" -lt "$APPLY_LINE" ] || ! [ "$APPLY_LINE" -lt "$HOSTING_LINE" ]; then
-  echo 'error: delivery must build, scan, push, verify, guard, apply, then release Hosting' >&2
+   ! [ "$PUSH_LINE" -lt "$FRONTEND_LINE" ] || ! [ "$FRONTEND_LINE" -lt "$EXPORT_LINE" ] ||
+   ! [ "$EXPORT_LINE" -lt "$PREFLIGHT_HOSTING_LINE" ] || ! [ "$PREFLIGHT_HOSTING_LINE" -lt "$VERIFY_LINE" ] ||
+   ! [ "$VERIFY_LINE" -lt "$GUARD_LINE" ] || ! [ "$GUARD_LINE" -lt "$APPLY_LINE" ] ||
+   ! [ "$APPLY_LINE" -lt "$FINAL_HOSTING_LINE" ]; then
+  echo 'error: delivery must build, scan, push, build the export, publish it, verify, guard, apply, then refresh Hosting' >&2
   exit 1
 fi
 
