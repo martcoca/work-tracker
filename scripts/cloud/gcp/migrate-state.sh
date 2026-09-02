@@ -34,7 +34,23 @@ fi
 mkdir -p "$MIGRATION_RECORD"
 cp "$FOUNDATION_STATE" "$MIGRATION_RECORD/foundation.before.tfstate"
 
-tofu -chdir="$FOUNDATION" state mv \
+# The split operates on the two local state files directly, but both roots now declare a
+# gcs backend and OpenTofu refuses every state command until that backend is initialised —
+# which must not happen until after the split. `-backend=false` is not enough: the command
+# still reads the declared backend.
+#
+# So the split runs in a temporary root that copies the configuration and excludes exactly
+# backend.tf, the same technique identity-and-tenancy uses for its offline plan. The real
+# state files are addressed by absolute path, so only their contents change; the temporary
+# root is discarded.
+SPLIT_ROOT="$(mktemp -d)"
+trap 'rm -rf "$SPLIT_ROOT"' EXIT
+mkdir -p "$SPLIT_ROOT/foundation"
+find "$FOUNDATION" -maxdepth 1 -name '*.tf' ! -name 'backend.tf' -exec cp {} "$SPLIT_ROOT/foundation/" \;
+cp "$FOUNDATION/.terraform.lock.hcl" "$SPLIT_ROOT/foundation/" 2>/dev/null || true
+tofu -chdir="$SPLIT_ROOT/foundation" init -input=false -backend=false >/dev/null
+
+tofu -chdir="$SPLIT_ROOT/foundation" state mv \
   -state="$FOUNDATION_STATE" \
   -state-out="$DELIVERY_STATE" \
   google_cloud_run_v2_service.reader \

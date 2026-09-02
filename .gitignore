@@ -9,3 +9,7 @@ firebase.deploy.json
 
 # Real values, credentials and apply inputs. Never committed.
 config/local/
+
+# A saved plan is a zip containing tfstate — including any sensitive variable value
+# that went into it. One was committed on 2026-09-02 carrying an OAuth client secret.
+*.tfplan
