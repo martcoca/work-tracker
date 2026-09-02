@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -369,6 +370,15 @@ func (reader *Reader) fetch(parent context.Context, configured source, now time.
 	}
 	if response.StatusCode != http.StatusOK {
 		return fetchResult{source: configured, err: fmt.Errorf("endpoint returned HTTP %d", response.StatusCode)}
+	}
+	// A single-page host answers every unmatched path with its index document and HTTP 200,
+	// so an export that simply is not there arrives as HTML rather than as a 404. Treating
+	// that as a malformed export refused startup for an export the service is allowed not to
+	// have yet; treating it as unavailable routes it into the same absence rule as a 404,
+	// which still refuses absence for anything required at startup.
+	if mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type")); err == nil &&
+		mediaType != "" && mediaType != "application/json" {
+		return fetchResult{source: configured, err: unavailableError(fmt.Sprintf("endpoint returned %s, not an export", mediaType))}
 	}
 	contents, err := io.ReadAll(io.LimitReader(response.Body, maximumExportBytes+1))
 	if err != nil {

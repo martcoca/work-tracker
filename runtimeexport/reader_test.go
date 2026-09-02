@@ -606,3 +606,56 @@ func ExampleReader() {
 	fmt.Println(config.RefreshInterval, config.FetchTimeout)
 	// Output: 5m0s 5s
 }
+
+// spaHost answers every path it does not hold with its index document and HTTP 200, the
+// way Firebase Hosting does behind a `"**" -> /index.html` rewrite. This is not a
+// hypothetical: the first deployment served on its real domain refused to start with
+//
+//	startup refused: packets: invalid export: decode envelope:
+//	invalid character '<' looking for beginning of value
+//
+// because its own packets export is published by nothing yet, and the host answered the
+// absence with a web page instead of a 404.
+type spaHost struct{ documents map[string][]byte }
+
+func (host spaHost) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	contents, ok := host.documents[request.URL.Path]
+	if !ok {
+		response.Header().Set("Content-Type", "text/html; charset=utf-8")
+		response.WriteHeader(http.StatusOK)
+		_, _ = response.Write([]byte("<!doctype html>\n<html><head><title>Work Tracker</title></head></html>"))
+		return
+	}
+	response.Header().Set("Content-Type", "application/json")
+	_, _ = response.Write(contents)
+}
+
+func TestSinglePageHostAnswersAbsenceWithMarkup(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	t.Run("a service-owned export may be answered with markup", func(t *testing.T) {
+		documents := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Markup absence")
+		delete(documents, "/packets.json")
+		server := httptest.NewServer(spaHost{documents: documents})
+		defer server.Close()
+		reader := newFixtureReader(t, fixtureConfig(server.URL), server.Client(), func() time.Time { return now })
+		if err := reader.Start(context.Background()); err != nil {
+			t.Fatalf("startup refused an absent service-owned export: %v", err)
+		}
+	})
+
+	// The same leniency must never reach authority. A host that answers with markup where a
+	// tenant directory belongs is telling us nothing about who is authorised.
+	for _, authority := range []string{"/tenant-directory.json", "/agent-grants.json"} {
+		t.Run("authority may not be: "+authority, func(t *testing.T) {
+			documents := fixtureDocuments(t, now.Add(-5*time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Markup absence")
+			delete(documents, authority)
+			server := httptest.NewServer(spaHost{documents: documents})
+			defer server.Close()
+			reader := newFixtureReader(t, fixtureConfig(server.URL), server.Client(), func() time.Time { return now })
+			if err := reader.Start(context.Background()); err == nil {
+				t.Fatalf("startup accepted markup in place of %s", authority)
+			}
+		})
+	}
+}
