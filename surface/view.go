@@ -50,11 +50,15 @@ type HeldExportStatus struct {
 }
 
 type PacketSummary struct {
-	ID        string  `json:"id"`
-	Status    string  `json:"status"`
-	TakenBy   *string `json:"taken_by"`
-	Blocked   bool    `json:"blocked"`
-	Unclaimed bool    `json:"unclaimed"`
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	// SupersededBy names the replacement when this packet has been retired. Supersession
+	// is not a Status — a packet keeps the status it had when it was replaced — so without
+	// this field a retired packet is indistinguishable here from available work.
+	SupersededBy *string `json:"superseded_by"`
+	TakenBy      *string `json:"taken_by"`
+	Blocked      bool    `json:"blocked"`
+	Unclaimed    bool    `json:"unclaimed"`
 }
 
 type EpicSummary struct {
@@ -366,8 +370,14 @@ func countWaiting(blocked, unclaimed *int, record packetexport.Record) {
 }
 
 func summarize(record packetexport.Record) PacketSummary {
+	// A superseded packet keeps whatever status it held when it was replaced, usually
+	// "not started". Offering it as unclaimed sends a reader at work that no longer
+	// exists, so supersession disqualifies it here regardless of status.
+	superseded := record.SupersededBy != nil && *record.SupersededBy != ""
 	return PacketSummary{
-		ID: record.ID, Status: record.Status, TakenBy: record.TakenBy,
-		Blocked: record.Status == "blocked", Unclaimed: record.Status == "not started" && record.TakenBy == nil,
+		ID: record.ID, Status: record.Status,
+		SupersededBy: record.SupersededBy, TakenBy: record.TakenBy,
+		Blocked:   record.Status == "blocked",
+		Unclaimed: record.Status == "not started" && record.TakenBy == nil && !superseded,
 	}
 }

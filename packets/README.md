@@ -14,7 +14,7 @@ Check, and enough context to execute without reading another repository.
 | — | [`0004-E02-T03.md`](0004-E02-T03.md) | done | The deployable image: `container_image` is required and nothing produced one, so the whole cloud path is blocked on it |
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
-| 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | in progress | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
+| 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | done | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
 | 7 | [`0004-E05-T03.md`](0004-E05-T03.md) | in progress | **Publish the packet export.** The app is deployed, authenticating, and empty: `packetexport.Publish` exists and nothing calls it, so `packets.json` has never existed |
 | 8 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
 | 9 | [`0004-E05-T02.md`](0004-E05-T02.md) | not started | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
