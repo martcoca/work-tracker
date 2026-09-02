@@ -14,7 +14,10 @@ Check, and enough context to execute without reading another repository.
 | — | [`0004-E02-T03.md`](0004-E02-T03.md) | done | The deployable image: `container_image` is required and nothing produced one, so the whole cloud path is blocked on it |
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
-| 6 | [`0004-E03-T02.md`](0004-E03-T02.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable |
+| 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | not started | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
+| 7 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
+| 8 | [`0004-E05-T02.md`](0004-E05-T02.md) | not started | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
+| — | [`0004-E03-T02.md`](0004-E03-T02.md) | superseded | Required revocation within one hour. ADR-0053 moved the export lifetime to 48 hours; replaced by E03-T03 |
 | — | [`0004-E02-T05.md`](0004-E02-T05.md) | done | The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
 
 Take the packet the Founder names. Otherwise take the next one in this table whose
@@ -23,6 +26,10 @@ Take the packet the Founder names. Otherwise take the next one in this table who
 **E01 needs no cloud account.** E02-T01 stops at a clean plan — applying cloud identity is
 the Founder's. **E03 cannot start until initiative 0000 publishes agent grants**; if its
 grants export does not exist, stop and say so rather than stubbing the contract.
+
+**E05 exists because the product went live by hand.** Cloud Run, Firebase Hosting and the
+authority wiring all work, and every step of getting them there was manual. Until E05-T01
+lands, shipping anything requires one specific laptop and its local Terraform state.
 
 E04 — removing `packets/` from every repository, including this one — is deliberately
 unwritten. Its shape depends on what E01 through E03 actually build, and it is gated on a
