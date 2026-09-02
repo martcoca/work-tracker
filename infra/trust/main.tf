@@ -121,3 +121,18 @@ resource "google_project_iam_member" "api_keys" {
   role    = "roles/serviceusage.apiKeysViewer"
   member  = local.deployer_member
 }
+
+# Cloud Run reports a long-running operation for every service update, and the deployer
+# must poll it to learn whether its own apply succeeded. Operations are project-and-location
+# resources, not service resources, so the run.developer binding on tracker-reader above
+# cannot reach them: the first real deploy authenticated correctly, modified the service,
+# and then failed with `Permission 'run.operations.get' denied`.
+#
+# roles/run.viewer is the narrowest role that includes it. It is read-only, so this adds
+# the ability to observe Cloud Run in this project and no ability to change anything. The
+# only write the deployer holds remains run.developer on the one service.
+resource "google_project_iam_member" "run_operations_reader" {
+  project = var.project_id
+  role    = "roles/run.viewer"
+  member  = local.deployer_member
+}
