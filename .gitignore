@@ -7,3 +7,10 @@ dist/
 
 # Real values, credentials and apply inputs. Never committed.
 config/local/
+
+# Doctrine forbids committing these. Enforced by scripts/check-ignore-contract.sh
+# after a saved plan carrying an OAuth client secret reached a public repository.
+runtime/
+*.tfplan
+*.tfvars
+.agentic/
