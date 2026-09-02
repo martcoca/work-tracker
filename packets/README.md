@@ -15,8 +15,9 @@ Check, and enough context to execute without reading another repository.
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
 | 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | in progress | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
-| 7 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
-| 8 | [`0004-E05-T02.md`](0004-E05-T02.md) | not started | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
+| 7 | [`0004-E05-T03.md`](0004-E05-T03.md) | not started | **Publish the packet export.** The app is deployed, authenticating, and empty: `packetexport.Publish` exists and nothing calls it, so `packets.json` has never existed |
+| 8 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
+| 9 | [`0004-E05-T02.md`](0004-E05-T02.md) | not started | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
 | — | [`0004-E03-T02.md`](0004-E03-T02.md) | superseded | Required revocation within one hour. ADR-0053 moved the export lifetime to 48 hours; replaced by E03-T03 |
 | — | [`0004-E02-T05.md`](0004-E02-T05.md) | done | The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
 
