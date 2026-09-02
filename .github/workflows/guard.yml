@@ -36,6 +36,9 @@ jobs:
           scripts/check-packet-integrity.sh
           "${{ github.event.pull_request.base.sha }}"
 
+      - name: Nothing forbidden can be committed
+        run: scripts/check-ignore-contract.sh
+
       - name: Workflow permissions are explicit
         run: scripts/check-workflow-permissions.sh
 
