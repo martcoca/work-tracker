@@ -13,3 +13,4 @@ config/local/
 runtime/
 *.tfplan
 *.tfvars
+.agentic/

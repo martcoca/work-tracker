@@ -19,11 +19,23 @@ FAILED=0
 
 # Each probe is a path that must be ignored. They are never created; git check-ignore
 # answers on the pattern alone.
+# Asking git alone is not enough. `.git/info/exclude` and a global excludesfile both
+# satisfy check-ignore, and neither is committed — so a rule can pass on the machine that
+# wrote it and fail everywhere else. That happened: .agentic/ was ignored on one laptop by
+# .git/info/exclude and by nothing in any repository, and CI found it.
+#
+# So each probe must be ignored AND the ignore must come from a tracked file.
 while IFS='|' read -r probe why; do
   [ -n "$probe" ] || continue
-  if ! git check-ignore -q "$probe" 2>/dev/null; then
+  SOURCE="$(git check-ignore -v "$probe" 2>/dev/null | cut -d: -f1 || true)"
+  if [ -z "$SOURCE" ]; then
     printf 'error: %s is not ignored\n' "$probe" >&2
     printf '       %s\n' "$why" >&2
+    FAILED=1
+  elif ! git ls-files --error-unmatch "$SOURCE" >/dev/null 2>&1; then
+    printf 'error: %s is ignored only by %s, which is not committed\n' "$probe" "$SOURCE" >&2
+    printf '       %s\n' "$why" >&2
+    printf '       A rule that lives outside the repository protects only this machine.\n' >&2
     FAILED=1
   fi
 done <<'PROBES'
