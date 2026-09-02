@@ -72,11 +72,38 @@ func TestPublishRefusesAmbiguousActiveTenant(t *testing.T) {
 		{ID: "tenant-a", Slug: "a", DisplayName: "Tenant A", Status: tenant.StatusActive, CreatedAt: "2029-01-01T00:00:00Z", Version: 1},
 		{ID: "tenant-b", Slug: "b", DisplayName: "Tenant B", Status: tenant.StatusActive, CreatedAt: "2029-01-01T00:00:00Z", Version: 1},
 	}
+	repository := t.TempDir()
+	writeRepositoryPacket(t, repository, "packet-a", "not started", "")
+	initializeGitRepository(t, repository)
 	output := filepath.Join(t.TempDir(), "must-not-exist")
 	_, err := publish(context.Background(), config{
-		repositoryRoot: t.TempDir(), outputDirectory: output, tenantDirectoryURL: "https://identity.example.invalid/tenant-directory.json",
+		repositoryRoot: repository, outputDirectory: output, tenantDirectoryURL: "https://identity.example.invalid/tenant-directory.json",
 	}, fixtureClient(directoryExport(t, now, records)), now)
 	if err == nil || !strings.Contains(err.Error(), "exactly one active tenant; found 2") {
+		t.Fatalf("error = %v", err)
+	}
+	if _, statErr := os.Stat(output); !os.IsNotExist(statErr) {
+		t.Fatalf("failed publication created output: %v", statErr)
+	}
+}
+
+func TestPublishRefusesDirtyRepositoryProvenance(t *testing.T) {
+	now := time.Date(2030, time.March, 4, 12, 0, 0, 0, time.UTC)
+	repository := t.TempDir()
+	writeRepositoryPacket(t, repository, "packet-a", "not started", "")
+	initializeGitRepository(t, repository)
+	if err := os.WriteFile(filepath.Join(repository, "packets", "packet-a.md"), []byte("changed after commit\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	records := []tenant.Record{{
+		ID: "tenant-a", Slug: "a", DisplayName: "Tenant A",
+		Status: tenant.StatusActive, CreatedAt: "2029-01-01T00:00:00Z", Version: 1,
+	}}
+	output := filepath.Join(repository, "dist")
+	_, err := publish(context.Background(), config{
+		repositoryRoot: repository, outputDirectory: output, tenantDirectoryURL: "https://identity.example.invalid/tenant-directory.json",
+	}, fixtureClient(directoryExport(t, now, records)), now)
+	if err == nil || !strings.Contains(err.Error(), "repository must be clean") {
 		t.Fatalf("error = %v", err)
 	}
 	if _, statErr := os.Stat(output); !os.IsNotExist(statErr) {

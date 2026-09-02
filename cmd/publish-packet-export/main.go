@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,6 +73,9 @@ func publish(ctx context.Context, configuration config, client *http.Client, now
 	if !filepath.IsAbs(outputDirectory) {
 		outputDirectory = filepath.Join(repositoryRoot, outputDirectory)
 	}
+	if err := requireCleanRepository(ctx, repositoryRoot); err != nil {
+		return publication{}, err
+	}
 	directory, err := fetchTenantDirectory(ctx, client, configuration.tenantDirectoryURL, now)
 	if err != nil {
 		return publication{}, err
@@ -96,6 +100,19 @@ func publish(ctx context.Context, configuration config, client *http.Client, now
 		path: path, packetCount: len(verified.Packets), schema: envelope.Schema,
 		expiresAt: envelope.ExpiresAt, repository: envelope.Source.Repository, commit: envelope.Source.Commit,
 	}, nil
+}
+
+func requireCleanRepository(ctx context.Context, repositoryRoot string) error {
+	command := exec.CommandContext(ctx, "git", "status", "--porcelain", "--untracked-files=normal")
+	command.Dir = repositoryRoot
+	output, err := command.Output()
+	if err != nil {
+		return fmt.Errorf("inspect repository state: %w", err)
+	}
+	if len(strings.TrimSpace(string(output))) != 0 {
+		return errors.New("repository must be clean so export provenance names its exact inputs")
+	}
+	return nil
 }
 
 func fetchTenantDirectory(ctx context.Context, client *http.Client, rawURL string, now time.Time) (*tenant.Directory, error) {

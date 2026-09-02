@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/martcoca/work-tracker/runtimeexport"
+	"github.com/martcoca/work-tracker/surface"
 )
 
 func main() {
@@ -37,22 +38,38 @@ func run() error {
 		return err
 	}
 	statuses := reader.ExportStatuses(now)
-	for _, required := range []runtimeexport.ExportName{runtimeexport.TenantDirectory, runtimeexport.AgentGrants} {
-		found := false
-		for _, status := range statuses {
-			if status.Name != string(required) {
-				continue
-			}
-			found = true
-			if !status.Available || status.Stale || !status.Required || status.ServiceOwned {
-				return fmt.Errorf("%s did not verify as fresh required authority", required)
-			}
-			fmt.Printf("verified %s expires_at=%s\n", required, status.ExpiresAt)
-		}
+	if err := verifyStatuses(statuses); err != nil {
+		return err
+	}
+	for _, status := range statuses {
+		fmt.Printf("verified %s expires_at=%s\n", status.Name, status.ExpiresAt)
+	}
+	fmt.Println("PASS: packet and required authority exports are reachable, authentic, and fresh")
+	return nil
+}
+
+func verifyStatuses(statuses []surface.HeldExportStatus) error {
+	byName := make(map[string]surface.HeldExportStatus, len(statuses))
+	for _, status := range statuses {
+		byName[status.Name] = status
+	}
+	for _, name := range []runtimeexport.ExportName{runtimeexport.Packets, runtimeexport.TenantDirectory, runtimeexport.AgentGrants} {
+		status, found := byName[string(name)]
 		if !found {
-			return fmt.Errorf("%s status is missing", required)
+			return fmt.Errorf("%s status is missing", name)
+		}
+		if !status.Available || status.Stale {
+			return fmt.Errorf("%s did not verify as a fresh live export", name)
+		}
+		if name == runtimeexport.Packets {
+			if status.Required || !status.ServiceOwned {
+				return fmt.Errorf("%s export policy changed unexpectedly", name)
+			}
+			continue
+		}
+		if !status.Required || status.ServiceOwned {
+			return fmt.Errorf("%s did not verify as required external authority", name)
 		}
 	}
-	fmt.Println("PASS: required authority exports are reachable, authentic, and fresh")
 	return nil
 }

@@ -115,12 +115,19 @@ jobs:
           esac
           printf 'ref=%s@%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_OUTPUT"
 
-      - name: Verify public runtime authority before changing the service
+      - name: Install locked frontend and Firebase CLI dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend carrying the merge commit
+        run: |
+          set -euo pipefail
+          npm run build
+          printf '%s\n' "$GITHUB_SHA" > "dist/source-commit-$GITHUB_SHA.txt"
+
+      - name: Build the packet export through the product model
         env:
-          PACKET_EXPORT_URL: https://tracker.martcoca.com/packets.json
           TENANT_DIRECTORY_URL: https://identity.martcoca.com/tenant-directory.json
-          AGENT_GRANTS_URL: https://identity.martcoca.com/agent-grants.json
-        run: GOWORK=off go run ./cmd/verify-runtime-exports
+        run: GOWORK=off go run ./cmd/publish-packet-export -repository . -output dist
 
       - name: Exchange exact-main identity for the deploy-only account
         uses: google-github-actions/auth@v3
@@ -139,6 +146,40 @@ jobs:
         run: >-
           tofu -chdir=infra/deploy init -input=false
           -backend-config="bucket=${{ vars.GCP_STATE_BUCKET }}"
+
+      - name: Write Firebase CLI configuration from applied inputs
+        run: >-
+          tofu -chdir=infra/deploy output -raw firebase_hosting_configuration
+          > firebase.deploy.json
+
+      # Hosting rewrites pin the live Cloud Run revision. The first release makes the
+      # static authority readable before its deployment gate; the second release below
+      # refreshes that pin after the guarded Cloud Run apply.
+      - name: Release packet authority before the runtime gate
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: >-
+          npx firebase deploy --only hosting --non-interactive
+          --project "$PROJECT_ID" --config firebase.deploy.json
+          --message "$GITHUB_SHA packet-authority-preflight"
+
+      - name: Verify public runtime authority before changing the service
+        env:
+          PACKET_EXPORT_URL: https://tracker.martcoca.com/packets.json
+          TENANT_DIRECTORY_URL: https://identity.martcoca.com/tenant-directory.json
+          AGENT_GRANTS_URL: https://identity.martcoca.com/agent-grants.json
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            if GOWORK=off go run ./cmd/verify-runtime-exports; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
+          echo '::error::live packet and authority exports did not verify'
+          exit 1
 
       - name: Plan the exact pushed digest
         env:
@@ -178,21 +219,7 @@ jobs:
           gcloud run services describe tracker-reader --project="$PROJECT_ID" --region="$REGION" \
             --format='value(spec.template.metadata.annotations)' | grep -F "$GITHUB_SHA"
 
-      - name: Install locked frontend and Firebase CLI dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Build frontend carrying the merge commit
-        run: |
-          set -euo pipefail
-          npm run build
-          printf '%s\n' "$GITHUB_SHA" > "dist/source-commit-$GITHUB_SHA.txt"
-
-      - name: Write Firebase CLI configuration from applied inputs
-        run: >-
-          tofu -chdir=infra/deploy output -raw firebase_hosting_configuration
-          > firebase.deploy.json
-
-      - name: Release Hosting with the merge commit as its message
+      - name: Refresh Hosting's Cloud Run pin after apply
         env:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: >-
