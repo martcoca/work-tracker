@@ -19,6 +19,8 @@ jobs:
   build:
     name: Build and inspect container
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -44,6 +46,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write

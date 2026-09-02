@@ -21,6 +21,8 @@ jobs:
   contract:
     name: Repository contract
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -64,6 +66,8 @@ jobs:
   packet-model:
     name: Packet model
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -91,6 +95,8 @@ jobs:
   human-surface:
     name: Read-only human surface
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -115,6 +121,8 @@ jobs:
   identity-plan:
     name: Unapplied identity plan
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7

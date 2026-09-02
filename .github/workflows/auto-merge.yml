@@ -38,6 +38,8 @@ jobs:
     name: Merge when green
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
+    timeout-minutes: 30
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7
