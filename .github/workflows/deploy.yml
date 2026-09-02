@@ -1,0 +1,215 @@
+name: Deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Auto-merge uses GITHUB_TOKEN, so its merge raises no push event. Auto-merge dispatches
+  # this workflow explicitly on main; both entry points remain main-only below.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Delivery policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prove keyless, ordered, digest-preserving delivery
+        run: |
+          scripts/deploy/check-workflow.sh
+          scripts/deploy/check-refusals.sh
+
+  deploy:
+    name: Deploy merged revision
+    needs: policy
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the merge commit
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate configured coordinates
+        id: coordinates
+        env:
+          ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          case "$ARTIFACT_REPOSITORY" in
+            *-docker.pkg.dev/*/*) ;;
+            *) echo '::error::GCP_ARTIFACT_REPOSITORY must be a full repository path.'; exit 1 ;;
+          esac
+          configured_project="${ARTIFACT_REPOSITORY#*/}"
+          configured_project="${configured_project%%/*}"
+          if [ -z "$PROJECT_ID" ] || [ "$configured_project" != "$PROJECT_ID" ]; then
+            echo '::error::Artifact Registry and project variables disagree.'
+            exit 1
+          fi
+          printf 'registry=%s\n' "${ARTIFACT_REPOSITORY%%/*}" >> "$GITHUB_OUTPUT"
+          printf 'image=%s/work-tracker\n' "$ARTIFACT_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+      - name: Build the production image once
+        env:
+          IMAGE: ${{ steps.coordinates.outputs.image }}
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="$IMAGE:$GITHUB_SHA"
+          docker build --tag "$IMAGE_TAG" .
+          printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG" >> "$GITHUB_ENV"
+
+      - name: Inspect the image that will be pushed
+        run: scripts/container/check-image.sh "$IMAGE_TAG"
+
+      - name: Exercise the image that will be pushed
+        run: scripts/container/check-runtime.sh "$IMAGE_TAG"
+
+      - name: Exchange exact-main identity for the publish-only account
+        id: publisher-auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PUBLISHER_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 600s
+          create_credentials_file: false
+
+      - name: Log in to the one configured registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.coordinates.outputs.registry }}
+          username: oauth2accesstoken
+          password: ${{ steps.publisher-auth.outputs.access_token }}
+
+      - name: Push the already-inspected image and retain its registry digest
+        id: pushed-image
+        env:
+          IMAGE: ${{ steps.coordinates.outputs.image }}
+        run: |
+          set -euo pipefail
+          PUSH_LOG="$RUNNER_TEMP/docker-push.log"
+          docker push "$IMAGE_TAG" 2>&1 | tee "$PUSH_LOG"
+          DIGEST="$(sed -n 's/^.*digest: \(sha256:[0-9a-f]\{64\}\).*$/\1/p' "$PUSH_LOG" | tail -n 1)"
+          case "$DIGEST" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo '::error::registry push returned no full sha256 digest'; exit 1 ;;
+          esac
+          printf 'ref=%s@%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Verify public runtime authority before changing the service
+        env:
+          PACKET_EXPORT_URL: https://tracker.martcoca.com/packets.json
+          TENANT_DIRECTORY_URL: https://identity.martcoca.com/tenant-directory.json
+          AGENT_GRANTS_URL: https://identity.martcoca.com/agent-grants.json
+        run: GOWORK=off go run ./cmd/verify-runtime-exports
+
+      - name: Exchange exact-main identity for the deploy-only account
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+
+      - name: Initialize versioned remote state
+        run: >-
+          tofu -chdir=infra/deploy init -input=false
+          -backend-config="bucket=${{ vars.GCP_STATE_BUCKET }}"
+
+      - name: Plan the exact pushed digest
+        env:
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+          TF_VAR_region: ${{ vars.GCP_REGION }}
+          TF_VAR_hosting_site_id: ${{ vars.GCP_HOSTING_SITE_ID }}
+          TF_VAR_runtime_service_account_name: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT_NAME }}
+          TF_VAR_container_image: ${{ steps.pushed-image.outputs.ref }}
+          TF_VAR_source_commit: ${{ github.sha }}
+        run: >-
+          tofu -chdir=infra/deploy plan -input=false -lock-timeout=5m
+          -out="$RUNNER_TEMP/work-tracker-deploy.tfplan"
+
+      - name: Refuse cost, destruction, or provenance drift
+        env:
+          EXPECTED_IMAGE: ${{ steps.pushed-image.outputs.ref }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tofu -chdir=infra/deploy show -json "$RUNNER_TEMP/work-tracker-deploy.tfplan" > "$RUNNER_TEMP/work-tracker-deploy.json"
+          GOWORK=off GOPROXY=off go run ./internal/deployguard < "$RUNNER_TEMP/work-tracker-deploy.json"
+
+      - name: Apply only the guarded saved plan
+        run: >-
+          tofu -chdir=infra/deploy apply -input=false -lock-timeout=5m
+          "$RUNNER_TEMP/work-tracker-deploy.tfplan"
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Read the merge commit from the live Cloud Run revision
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          set -euo pipefail
+          gcloud run services describe tracker-reader --project="$PROJECT_ID" --region="$REGION" \
+            --format='value(spec.template.metadata.annotations)' | grep -F "$GITHUB_SHA"
+
+      - name: Install locked frontend and Firebase CLI dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend carrying the merge commit
+        run: |
+          set -euo pipefail
+          npm run build
+          printf '%s\n' "$GITHUB_SHA" > "dist/source-commit-$GITHUB_SHA.txt"
+
+      - name: Write Firebase CLI configuration from applied inputs
+        run: >-
+          tofu -chdir=infra/deploy output -raw firebase_hosting_configuration
+          > firebase.deploy.json
+
+      - name: Release Hosting with the merge commit as its message
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: >-
+          npx firebase deploy --only hosting --non-interactive
+          --project "$PROJECT_ID" --config firebase.deploy.json
+          --message "$GITHUB_SHA"
+
+      - name: Read the merge commit from the live Hosting version
+        run: |
+          set -euo pipefail
+          PROVENANCE_URL="https://tracker.martcoca.com/source-commit-$GITHUB_SHA.txt"
+          for _ in $(seq 1 12); do
+            if [ "$(curl -fsS "$PROVENANCE_URL")" = "$GITHUB_SHA" ]; then
+              printf '%s\n' "$GITHUB_SHA"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo '::error::live Hosting version did not return the merge commit'
+          exit 1

@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-func TestCostGuardAcceptsScaleToZeroAllowlist(t *testing.T) {
+func TestCostGuardAcceptsFoundationAllowlist(t *testing.T) {
 	input := planJSON(`[
     {"address":"google_firebase_hosting_site.tracker","type":"google_firebase_hosting_site","values":{}},
     {"address":"google_identity_platform_config.tracker","type":"google_identity_platform_config","values":{"authorized_domains":["tracker.martcoca.com"]}},
     {"address":"google_identity_platform_default_supported_idp_config.google","type":"google_identity_platform_default_supported_idp_config","values":{"idp_id":"google.com","enabled":true}},
-    {"address":"google_cloud_run_v2_service.reader","type":"google_cloud_run_v2_service","values":{"deletion_protection":true,"template":[{"scaling":[{"min_instance_count":0}],"containers":[{"resources":[{"cpu_idle":true}]}]}]}},
+    {"address":"google_service_account.reader","type":"google_service_account","values":{}},
     {"address":"google_cloud_run_v2_service_iam_member.public","type":"google_cloud_run_v2_service_iam_member","values":{"role":"roles/run.invoker","member":"allUsers"}}
   ]`)
 	var output bytes.Buffer

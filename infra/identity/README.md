@@ -1,8 +1,8 @@
 # Identity plan handoff
 
-This directory authors the human sign-in and read-only hosting configuration for
-`tracker.martcoca.com`. It deliberately stops at a plan. A worker must not run `tofu apply`,
-deploy Firebase Hosting, bind DNS, provision a certificate, create users, or set claims.
+This directory owns the slowly-changing sign-in, Firebase project/site, runtime identity,
+and public invocation policy for `tracker.martcoca.com`. Cloud Run revision delivery moved
+to `infra/deploy`; this foundation deliberately does not receive the merge deploy identity.
 
 The plan expects an existing billing-enabled project and protected values for every variable.
 Real identifiers and the Google OAuth client secret stay outside the repository. The Google
@@ -10,15 +10,10 @@ provider stores the OAuth secret in raw state, so the Founder must select an enc
 access-controlled state backend before apply.
 
 The callback is `https://tracker.martcoca.com/__/auth/handler`; the logout return is
-`https://tracker.martcoca.com/signed-out`. DNS and certificate readiness for that hostname,
-pre-provisioned Identity Platform users with signed `tenant_id` custom claims, and an
-immutable reader runtime image are apply prerequisites. The image contains no export;
-the service fetches the public packet, tenant-directory, and agent-grants objects after
-startup and retains only verified, unexpired copies in memory.
-
-`container_image` refuses tags and accepts only a full `...@sha256:<digest>` reference.
-The public export endpoints and their five-minute refresh / five-second fetch timing have
-safe defaults and remain variable inputs for the Founder. No export credential is accepted.
+`https://tracker.martcoca.com/signed-out`. DNS and certificate readiness for that hostname
+and pre-provisioned Identity Platform users with signed `tenant_id` custom claims remain
+apply prerequisites. No merge workflow receives the Google OAuth client secret or
+authority to change Identity Platform.
 
 The checked synthetic plan is produced without contacting a project:
 
@@ -32,6 +27,7 @@ GOOGLE_OAUTH_ACCESS_TOKEN=synthetic-plan-not-a-credential \
 scripts/cloud/gcp/cost-guard.sh /tmp/work-tracker-identity.tfplan
 ```
 
-The `firebase_hosting_configuration` output is the configuration the Founder deploys after
-the prerequisites exist. It serves `dist/`, rewrites same-origin `/api/**` reads to the
-Cloud Run service, and leaves Firebase's reserved `/__/auth/handler` on the settled host.
+The GCS backend prefix is `work-tracker/foundation`; the versioned bucket is supplied at
+initialization and never committed. The existing local state must be migrated before this
+configuration is planned after the Cloud Run resource split. Follow
+`scripts/cloud/gcp/migrate-state.sh`; planning first would incorrectly propose removal.

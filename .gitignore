@@ -4,12 +4,16 @@ dist/
 *.tfstate
 *.tfstate.*
 .terraform/
+.gha-creds-*.json
+firebase.deploy.json
 
 # Real values, credentials and apply inputs. Never committed.
 config/local/
 
 # Doctrine forbids committing these. Enforced by scripts/check-ignore-contract.sh
 # after a saved plan carrying an OAuth client secret reached a public repository.
+# A .tfplan is a zip containing tfstate, so it carries every sensitive variable that
+# went into it — the same bytes as *.tfstate in a different wrapper.
 runtime/
 *.tfplan
 *.tfvars
