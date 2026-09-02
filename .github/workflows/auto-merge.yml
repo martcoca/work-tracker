@@ -18,7 +18,7 @@ name: Auto-merge
 
 on:
   workflow_run:
-    workflows: ["Guard", "Image"]
+    workflows: ["Guard", "Image", "Deploy"]
     types: [completed]
 
 permissions:
@@ -49,7 +49,7 @@ jobs:
 
       - name: Merge the pull request if every check passed
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           REPO: ${{ github.repository }}
         run: |

@@ -88,7 +88,7 @@ func run(input io.Reader, output io.Writer) error {
 	}
 	for _, required := range []string{
 		"google_firebase_hosting_site", "google_identity_platform_config",
-		"google_identity_platform_default_supported_idp_config", "google_cloud_run_v2_service",
+		"google_identity_platform_default_supported_idp_config", "google_service_account",
 	} {
 		if !seen[required] {
 			return fmt.Errorf("plan is missing %s", required)

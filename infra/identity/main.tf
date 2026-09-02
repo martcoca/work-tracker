@@ -1,7 +1,8 @@
 locals {
-  hostname     = "tracker.martcoca.com"
-  callback_url = "https://${local.hostname}/__/auth/handler"
-  logout_url   = "https://${local.hostname}/signed-out"
+  hostname               = "tracker.martcoca.com"
+  callback_url           = "https://${local.hostname}/__/auth/handler"
+  logout_url             = "https://${local.hostname}/signed-out"
+  cloud_run_service_name = "tracker-reader"
 
   required_services = toset([
     "firebase.googleapis.com",
@@ -86,91 +87,12 @@ resource "google_service_account" "reader" {
   depends_on = [google_project_service.required]
 }
 
-resource "google_cloud_run_v2_service" "reader" {
-  project  = var.project_id
-  name     = "tracker-reader"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
-
-  deletion_protection = true
-
-  template {
-    service_account                  = google_service_account.reader.email
-    max_instance_request_concurrency = 80
-
-    scaling {
-      min_instance_count = 0
-      max_instance_count = 2
-    }
-
-    containers {
-      image = var.container_image
-
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        cpu_idle = true
-        limits = {
-          cpu    = "1"
-          memory = "256Mi"
-        }
-      }
-
-      env {
-        name  = "FIREBASE_PROJECT_ID"
-        value = var.project_id
-      }
-      env {
-        name  = "PACKET_EXPORT_URL"
-        value = var.packet_export_url
-      }
-      env {
-        name  = "TENANT_DIRECTORY_URL"
-        value = var.tenant_directory_url
-      }
-      env {
-        name  = "AGENT_GRANTS_URL"
-        value = var.agent_grants_url
-      }
-      env {
-        name  = "EXPORT_REFRESH_INTERVAL"
-        value = var.export_refresh_interval
-      }
-      env {
-        name  = "EXPORT_FETCH_TIMEOUT"
-        value = var.export_fetch_timeout
-      }
-
-      startup_probe {
-        initial_delay_seconds = 0
-        timeout_seconds       = 2
-        period_seconds        = 3
-        failure_threshold     = 10
-
-        http_get {
-          path = "/healthz"
-          port = 8080
-        }
-      }
-    }
-  }
-
-  traffic {
-    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
-    percent = 100
-  }
-
-  depends_on = [google_project_service.required]
-}
-
 # Firebase Hosting invokes the same-origin API without a Google IAM credential. The API
 # itself verifies every Identity Platform ID token and tenant claim before reading data.
 resource "google_cloud_run_v2_service_iam_member" "public_entrypoint" {
   project  = var.project_id
-  location = google_cloud_run_v2_service.reader.location
-  name     = google_cloud_run_v2_service.reader.name
+  location = var.region
+  name     = local.cloud_run_service_name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }

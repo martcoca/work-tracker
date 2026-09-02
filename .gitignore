@@ -4,6 +4,8 @@ dist/
 *.tfstate
 *.tfstate.*
 .terraform/
+.gha-creds-*.json
+firebase.deploy.json
 
 # Real values, credentials and apply inputs. Never committed.
 config/local/

@@ -118,8 +118,8 @@ jobs:
       - name: Build production surface
         run: npm run build
 
-  identity-plan:
-    name: Unapplied identity plan
+  infrastructure-plans:
+    name: Unapplied infrastructure plans
     runs-on: ubuntu-latest
     # A job with no cap can burn to GitHub's 6-hour default. One did: 4h19m.
     timeout-minutes: 30
@@ -141,25 +141,27 @@ jobs:
           tofu_version_file: .opentofu-version
           tofu_wrapper: false
 
-      - name: Initialize without backend
-        run: tofu -chdir=infra/identity init -backend=false
-
-      - name: Check formatting and provider schema
+      - name: Initialize every root without a backend
         run: |
-          tofu -chdir=infra/identity fmt -check -recursive
-          tofu -chdir=infra/identity validate
+          set -euo pipefail
+          for root in identity deploy trust; do
+            tofu -chdir="infra/$root" init -backend=false
+          done
 
-      - name: Test plan assertions with mock providers
-        run: tofu -chdir=infra/identity test -no-color
+      - name: Check formatting and provider schemas
+        run: |
+          set -euo pipefail
+          tofu fmt -check -recursive infra
+          for root in identity deploy trust; do
+            tofu -chdir="infra/$root" validate
+          done
 
-      - name: Produce refresh-disabled synthetic plan
-        env:
-          GOOGLE_OAUTH_ACCESS_TOKEN: synthetic-ci-not-a-credential
-        run: >-
-          tofu -chdir=infra/identity plan
-          -refresh=false -input=false -lock=false -no-color
-          -var-file=../../config/example/identity.tfvars
-          -out=/tmp/work-tracker-identity.tfplan
+      - name: Test plan and trust assertions with mock providers
+        run: |
+          set -euo pipefail
+          for root in identity deploy trust; do
+            tofu -chdir="infra/$root" test -no-color
+          done
 
-      - name: Prove idle cost is zero
-        run: scripts/cloud/gcp/cost-guard.sh /tmp/work-tracker-identity.tfplan
+      - name: Produce and guard a backend-free synthetic foundation plan
+        run: scripts/cloud/gcp/check-foundation-plan.sh
