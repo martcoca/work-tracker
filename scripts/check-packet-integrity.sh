@@ -67,7 +67,11 @@ while IFS= read -r path; do
 
   STATUS="$(git show "HEAD:$path" | sed -n 's/^- \*\*Status:\*\* //p' | head -n 1)"
   case "$STATUS" in
-    'not started'|'in progress'|'done'|'blocked') ;;
+    # 'superseded' records the convention this repository already follows: a packet body
+    # is frozen, so a packet made wrong by a later decision is retired and replaced
+    # rather than edited. Without it the only options were to lie ('done') or to
+    # delete the record.
+    'not started'|'in progress'|'done'|'blocked'|'superseded') ;;
     '') printf 'error: %s has no Status: line\n' "$NAME" >&2; FAILED=1 ;;
     *) printf 'error: %s has invalid status: %s\n' "$NAME" "$STATUS" >&2; FAILED=1 ;;
   esac
