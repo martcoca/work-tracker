@@ -5,6 +5,7 @@ variables {
   project_id                   = "project-synthetic"
   region                       = "region-synthetic"
   hosting_site_id              = "hosting-synthetic"
+  custom_domain_acme_challenge = "acme-challenge-synthetic"
   runtime_service_account_name = "reader-synthetic"
   google_oauth_client_id       = "client-synthetic"
   google_oauth_client_secret   = "secret-synthetic-not-a-credential"
@@ -36,5 +37,19 @@ run "clean_read_only_plan" {
   assert {
     condition     = output.identity_logout_url == "https://tracker.martcoca.com/signed-out"
     error_message = "The logout URL must use the settled hostname."
+  }
+
+  assert {
+    condition = (
+      !output.apply_prerequisites.dns_and_certificate_managed &&
+      length(output.apply_prerequisites.dns_and_certificate_reason) > 0 &&
+      output.apply_prerequisites.required_dns_records.hosting.name == "tracker.martcoca.com" &&
+      output.apply_prerequisites.required_dns_records.hosting.type == "CNAME" &&
+      output.apply_prerequisites.required_dns_records.hosting.value == "hosting-synthetic.web.app." &&
+      output.apply_prerequisites.required_dns_records.certificate.name == "_acme-challenge.tracker.martcoca.com" &&
+      output.apply_prerequisites.required_dns_records.certificate.type == "TXT" &&
+      output.apply_prerequisites.required_dns_records.certificate.value == "acme-challenge-synthetic"
+    )
+    error_message = "The plan must disclaim domain ownership with the exact human-managed DNS records."
   }
 }

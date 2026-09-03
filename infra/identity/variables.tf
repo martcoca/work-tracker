@@ -26,6 +26,17 @@ variable "hosting_site_id" {
   nullable    = false
 }
 
+variable "custom_domain_acme_challenge" {
+  description = "Current public TXT value Firebase requires at _acme-challenge.tracker.martcoca.com. Supplied outside tracked configuration."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = length(trimspace(var.custom_domain_acme_challenge)) > 0
+    error_message = "custom_domain_acme_challenge must name the exact public TXT value."
+  }
+}
+
 variable "runtime_service_account_name" {
   description = "Project-local id for the zero-permission Cloud Run runtime identity."
   type        = string
