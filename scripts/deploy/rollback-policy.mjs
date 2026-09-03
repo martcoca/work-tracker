@@ -61,8 +61,17 @@ export function selectPinnedRevision(version, service, expected) {
     throw new Error("Hosting version does not contain exactly one pinned tracker API rewrite");
   }
 
-  if (service?.reconciling !== false) {
-    throw new Error("Cloud Run service is reconciling or its state is unknown");
+  // Cloud Run v2 omits `reconciling` entirely once a service has settled; it appears only
+  // as true while a change is in flight. Requiring it to equal false therefore refused
+  // every healthy service, because undefined !== false. The generation comparison is the
+  // positive signal and does not depend on a field being present to mean "settled".
+  if (service?.reconciling === true) {
+    throw new Error("Cloud Run service is still reconciling a change");
+  }
+  const observed = service?.observedGeneration ?? service?.status?.observedGeneration;
+  const generation = service?.generation ?? service?.metadata?.generation;
+  if (observed === undefined || generation === undefined || String(observed) !== String(generation)) {
+    throw new Error("Cloud Run service has not settled its latest generation");
   }
   const traffic = Array.isArray(service?.trafficStatuses) ? service.trafficStatuses : [];
   const matches = traffic.filter((target) => target?.tag === apiPins[0].run.tag);
