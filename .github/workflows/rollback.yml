@@ -68,6 +68,12 @@ jobs:
             exit 1
           }
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
       - name: Install the locked API client
         run: npm ci --no-audit --no-fund
 
