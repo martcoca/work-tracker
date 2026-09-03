@@ -360,11 +360,20 @@ func (snapshot *Snapshot) notFoundOrIsolated(tenantID, initiativeID, epicID, pac
 	return ErrViewNotFound
 }
 
+// isUnclaimed is the single definition of "available to take". The rollup counts on the
+// initiative and epic cards and the per-packet summary must agree, because they are read
+// as the same claim about the same packet; when only one of them knew about supersession
+// the cards advertised retired work while the row beneath them did not.
+func isUnclaimed(record packetexport.Record) bool {
+	superseded := record.SupersededBy != nil && *record.SupersededBy != ""
+	return record.Status == "not started" && record.TakenBy == nil && !superseded
+}
+
 func countWaiting(blocked, unclaimed *int, record packetexport.Record) {
 	if record.Status == "blocked" {
 		(*blocked)++
 	}
-	if record.Status == "not started" && record.TakenBy == nil {
+	if isUnclaimed(record) {
 		(*unclaimed)++
 	}
 }
@@ -372,12 +381,11 @@ func countWaiting(blocked, unclaimed *int, record packetexport.Record) {
 func summarize(record packetexport.Record) PacketSummary {
 	// A superseded packet keeps whatever status it held when it was replaced, usually
 	// "not started". Offering it as unclaimed sends a reader at work that no longer
-	// exists, so supersession disqualifies it here regardless of status.
-	superseded := record.SupersededBy != nil && *record.SupersededBy != ""
+	// exists, so supersession disqualifies it regardless of status.
 	return PacketSummary{
 		ID: record.ID, Status: record.Status,
 		SupersededBy: record.SupersededBy, TakenBy: record.TakenBy,
 		Blocked:   record.Status == "blocked",
-		Unclaimed: record.Status == "not started" && record.TakenBy == nil && !superseded,
+		Unclaimed: isUnclaimed(record),
 	}
 }
