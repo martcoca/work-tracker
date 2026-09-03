@@ -42,7 +42,12 @@ function fixtures() {
       },
     },
     service: {
-      reconciling: false,
+      // A settled Cloud Run v2 service omits `reconciling` entirely rather than reporting
+      // false, and reports observedGeneration equal to generation. This fixture said
+      // reconciling: false — a shape the API never returns — so the policy passed here and
+      // refused every real healthy service the first time a rollback was attempted.
+      generation: "26",
+      observedGeneration: "26",
       trafficStatuses: [
         { revision: "tracker-reader-00002-new", percent: 100 },
         { revision: "tracker-reader-00001-old", percent: 0, tag: "fh-final" },
@@ -103,6 +108,28 @@ test("refuses a Hosting version pinned to a newer API commit", () => {
     }),
     /different commit/,
   );
+});
+
+test("refuses a service that has not settled its latest generation", () => {
+  // The first real rollback was refused against a perfectly healthy service. Every shape
+  // below is one the API actually produces, so a fixture cannot drift back to a value
+  // Cloud Run never emits.
+  const opts = { versionName, region: input.region };
+
+  const reconciling = fixtures();
+  reconciling.service.reconciling = true;
+  assert.throws(() => selectPinnedRevision(reconciling.version, reconciling.service, opts),
+    /still reconciling/);
+
+  const behind = fixtures();
+  behind.service.observedGeneration = "25";
+  assert.throws(() => selectPinnedRevision(behind.version, behind.service, opts),
+    /has not settled/);
+
+  // A settled service omits `reconciling` altogether. This is the case that failed live.
+  const settled = fixtures();
+  delete settled.service.reconciling;
+  assert.doesNotThrow(() => selectPinnedRevision(settled.version, settled.service, opts));
 });
 
 test("refuses malformed operator input before an API request", () => {
