@@ -45,4 +45,3 @@ POSTS="$(grep -Fc 'method: "POST"' "$RUNNER")"
 }
 
 printf 'PASS: rollback is one exact-main Hosting release after commit and API coupling checks\n'
-

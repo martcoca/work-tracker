@@ -109,4 +109,3 @@ test("refuses malformed operator input before an API request", () => {
   assert.throws(() => validateRollbackInputs({ ...input, targetCommit: "main" }), /target commit/);
   assert.throws(() => validateRollbackInputs({ ...input, siteId: "bad/site" }), /Hosting site id/);
 });
-

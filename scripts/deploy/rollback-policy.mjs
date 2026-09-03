@@ -83,4 +83,3 @@ export function verifyRevisionProvenance(revision, expected) {
     throw new Error("pinned Cloud Run revision was built from a different commit");
   }
 }
-
