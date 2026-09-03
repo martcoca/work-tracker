@@ -3,6 +3,7 @@
 project_id                   = "project-synthetic"
 region                       = "region-synthetic"
 hosting_site_id              = "hosting-synthetic"
+custom_domain_acme_challenge = "acme-challenge-synthetic"
 runtime_service_account_name = "reader-synthetic"
 google_oauth_client_id       = "client-synthetic"
 google_oauth_client_secret   = "secret-synthetic-not-a-credential"

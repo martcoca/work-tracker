@@ -1,0 +1,87 @@
+name: Rollback
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: Full commit previously deployed by the Deploy workflow
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Rollback policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
+      - name: Prove coupling and refusal rules offline
+        run: |
+          node --test scripts/deploy/rollback-policy.test.mjs
+          scripts/deploy/check-rollback-workflow.sh
+
+  rollback:
+    name: Roll back live frontend and API together
+    needs: policy
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out main with its deployment history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse anything outside retained main history
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+            echo '::error::target_commit must be a full lowercase commit'
+            exit 1
+          }
+          git merge-base --is-ancestor "$TARGET_COMMIT" HEAD || {
+            echo '::error::target_commit is not in the checked-out main history'
+            exit 1
+          }
+
+      - name: Install the locked API client
+        run: npm ci --no-audit --no-fund
+
+      - name: Exchange exact-main identity for the deploy-only account
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Release the compatible retained version
+        env:
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          HOSTING_SITE_ID: ${{ vars.GCP_HOSTING_SITE_ID }}
+        run: node scripts/deploy/rollback.mjs

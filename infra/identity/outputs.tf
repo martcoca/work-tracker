@@ -13,7 +13,20 @@ output "apply_prerequisites" {
   value = {
     hostname                    = local.hostname
     dns_and_certificate_managed = false
-    tenant_claims_managed       = false
-    cloud_run_managed_by_plan   = false
+    dns_and_certificate_reason  = "The DNS zone remains at the Founder-controlled registrar; managing its records or Firebase certificate challenge here would require a DNS credential this repository deliberately does not hold."
+    required_dns_records = {
+      hosting = {
+        name  = local.hostname
+        type  = "CNAME"
+        value = "${var.hosting_site_id}.web.app."
+      }
+      certificate = {
+        name  = "_acme-challenge.${local.hostname}"
+        type  = "TXT"
+        value = var.custom_domain_acme_challenge
+      }
+    }
+    tenant_claims_managed     = false
+    cloud_run_managed_by_plan = false
   }
 }

@@ -11,9 +11,17 @@ access-controlled state backend before apply.
 
 The callback is `https://tracker.martcoca.com/__/auth/handler`; the logout return is
 `https://tracker.martcoca.com/signed-out`. DNS and certificate readiness for that hostname
-and pre-provisioned Identity Platform users with signed `tenant_id` custom claims remain
-apply prerequisites. No merge workflow receives the Google OAuth client secret or
-authority to change Identity Platform.
+remain explicitly human-owned: the registrar zone stays where the Founder controls it, and
+this repository receives no DNS credential. `apply_prerequisites` prints the exact CNAME
+target derived from `hosting_site_id` and the exact `_acme-challenge` TXT value supplied as
+`custom_domain_acme_challenge`. The human step is to register the custom domain in Firebase
+Hosting, publish both output records at the registrar, and wait for Firebase to report the
+certificate connected. The public challenge value is an input rather than a committed live
+identifier, so the output stays accurate if Firebase rotates it.
+
+Pre-provisioned Identity Platform users with signed `tenant_id` custom claims also remain
+apply prerequisites. No merge workflow receives the Google OAuth client secret or authority
+to change Identity Platform.
 
 The checked synthetic plan is produced without contacting a project:
 
