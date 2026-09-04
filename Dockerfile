@@ -5,10 +5,12 @@
 FROM golang:1.26.4-alpine3.23@sha256:18b460dd17542c2ba43299a633cf6ebfc1115101509531471d7cfce1019af083 AS build
 
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY authoring ./authoring
 COPY cmd/tracker-web ./cmd/tracker-web
 COPY contract ./contract
+COPY eventstore ./eventstore
 COPY identity ./identity
 COPY internal/containerfixture ./internal/containerfixture
 COPY packet ./packet

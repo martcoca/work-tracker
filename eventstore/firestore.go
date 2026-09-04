@@ -87,13 +87,33 @@ func NewFirestore(ctx context.Context, config Config) (*Firestore, error) {
 
 func (store *Firestore) Close() error { return store.client.Close() }
 
-func (store *Firestore) Load() ([]packet.EventRecord, error) {
+func (store *Firestore) Load(packetIDs ...packet.PacketID) ([]packet.EventRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), store.timeout)
 	defer cancel()
 
-	documents, err := store.events.Documents(ctx).GetAll()
-	if err != nil {
-		return nil, fmt.Errorf("read Firestore events: %w", err)
+	documents := make([]*cloudfirestore.DocumentSnapshot, 0)
+	if len(packetIDs) == 0 {
+		loaded, err := store.events.Documents(ctx).GetAll()
+		if err != nil {
+			return nil, fmt.Errorf("read Firestore events: %w", err)
+		}
+		documents = loaded
+	} else {
+		seen := make(map[packet.PacketID]struct{}, len(packetIDs))
+		for _, packetID := range packetIDs {
+			if packetID == "" {
+				return nil, errors.New("cannot load an empty packet id")
+			}
+			if _, duplicate := seen[packetID]; duplicate {
+				continue
+			}
+			loaded, err := store.events.Where("packet_id", "==", string(packetID)).Documents(ctx).GetAll()
+			if err != nil {
+				return nil, fmt.Errorf("read Firestore events for packet: %w", err)
+			}
+			documents = append(documents, loaded...)
+			seen[packetID] = struct{}{}
+		}
 	}
 	records := make([]packet.EventRecord, 0, len(documents))
 	for _, snapshot := range documents {

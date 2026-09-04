@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 var allowedTypes = map[string]bool{
@@ -20,6 +21,11 @@ var allowedTypes = map[string]bool{
 	"google_service_account":                                true,
 	"google_cloud_run_v2_service":                           true,
 	"google_cloud_run_v2_service_iam_member":                true,
+	// Firestore Standard has no provisioned capacity or warm replica and bills only stored
+	// data and operations, both with a documented free tier. Its conditioned IAM member is
+	// additive and is checked below for the one data-plane role and one exact database.
+	"google_firestore_database": true,
+	"google_project_iam_member": true,
 }
 
 type plan struct {
@@ -57,6 +63,10 @@ func run(input io.Reader, output io.Writer) error {
 	if len(resources) == 0 {
 		return errors.New("plan contains no resources")
 	}
+	runtimeMember, err := expectedRuntimeMember(resources)
+	if err != nil {
+		return err
+	}
 	seen := make(map[string]bool)
 	for _, planned := range resources {
 		if !allowedTypes[planned.Type] {
@@ -84,11 +94,20 @@ func run(input io.Reader, output io.Writer) error {
 			if planned.Values["idp_id"] != "google.com" || planned.Values["enabled"] != true {
 				return fmt.Errorf("%s is not the enabled tier-1 Google provider", planned.Address)
 			}
+		case "google_firestore_database":
+			if err := validateFirestoreDatabase(planned); err != nil {
+				return err
+			}
+		case "google_project_iam_member":
+			if err := validateFirestoreMember(planned, runtimeMember); err != nil {
+				return err
+			}
 		}
 	}
 	for _, required := range []string{
 		"google_firebase_hosting_site", "google_identity_platform_config",
 		"google_identity_platform_default_supported_idp_config", "google_service_account",
+		"google_firestore_database", "google_project_iam_member",
 	} {
 		if !seen[required] {
 			return fmt.Errorf("plan is missing %s", required)
@@ -96,6 +115,63 @@ func run(input io.Reader, output io.Writer) error {
 	}
 	fmt.Fprintf(output, "PASS: cost guard (%d planned resources, idle cost zero)\n", len(resources))
 	return nil
+}
+
+func expectedRuntimeMember(resources []resource) (string, error) {
+	for _, planned := range resources {
+		if planned.Type != "google_service_account" {
+			continue
+		}
+		accountID, accountOK := planned.Values["account_id"].(string)
+		project, projectOK := planned.Values["project"].(string)
+		if !accountOK || !projectOK || accountID == "" || project == "" {
+			return "", fmt.Errorf("%s does not expose its account_id and project", planned.Address)
+		}
+		return fmt.Sprintf("serviceAccount:%s@%s.iam.gserviceaccount.com", accountID, project), nil
+	}
+	return "", errors.New("plan is missing google_service_account")
+}
+
+func validateFirestoreDatabase(planned resource) error {
+	required := map[string]any{
+		"name":                              "(default)",
+		"type":                              "FIRESTORE_NATIVE",
+		"database_edition":                  "STANDARD",
+		"point_in_time_recovery_enablement": "POINT_IN_TIME_RECOVERY_DISABLED",
+		"delete_protection_state":           "DELETE_PROTECTION_ENABLED",
+		"deletion_policy":                   "ABANDON",
+	}
+	for field, want := range required {
+		if planned.Values[field] != want {
+			return fmt.Errorf("%s has %s=%v, want %v", planned.Address, field, planned.Values[field], want)
+		}
+	}
+	return nil
+}
+
+func validateFirestoreMember(planned resource, runtimeMember string) error {
+	if planned.Values["role"] != "roles/datastore.user" || planned.Values["member"] != runtimeMember {
+		return fmt.Errorf("%s grants authority beyond the runtime Firestore data role", planned.Address)
+	}
+	conditions, _ := planned.Values["condition"].([]any)
+	if len(conditions) != 1 {
+		return fmt.Errorf("%s must have exactly one database condition", planned.Address)
+	}
+	condition, _ := conditions[0].(map[string]any)
+	want := "resource.name == \"projects/" + firestoreProject(runtimeMember) + "/databases/(default)\""
+	if condition["expression"] != want {
+		return fmt.Errorf("%s is not confined to the default Firestore database", planned.Address)
+	}
+	return nil
+}
+
+func firestoreProject(member string) string {
+	const suffix = ".iam.gserviceaccount.com"
+	at := strings.LastIndex(member, "@")
+	if at == -1 || !strings.HasSuffix(member, suffix) {
+		return ""
+	}
+	return strings.TrimSuffix(member[at+1:], suffix)
 }
 
 func flatten(current module) []resource {

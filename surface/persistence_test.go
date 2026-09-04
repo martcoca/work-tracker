@@ -34,7 +34,7 @@ func (unavailableSnapshotSource) ExportStatuses(time.Time) []HeldExportStatus {
 
 type recordingEventStore struct{ loadCalled bool }
 
-func (store *recordingEventStore) Load() ([]packet.EventRecord, error) {
+func (store *recordingEventStore) Load(...packet.PacketID) ([]packet.EventRecord, error) {
 	store.loadCalled = true
 	return nil, errors.New("store must not be read")
 }

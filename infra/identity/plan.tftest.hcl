@@ -30,6 +30,27 @@ run "clean_read_only_plan" {
   }
 
   assert {
+    condition = (
+      google_firestore_database.events.name == "(default)" &&
+      google_firestore_database.events.type == "FIRESTORE_NATIVE" &&
+      google_firestore_database.events.database_edition == "STANDARD" &&
+      google_firestore_database.events.point_in_time_recovery_enablement == "POINT_IN_TIME_RECOVERY_DISABLED" &&
+      google_firestore_database.events.delete_protection_state == "DELETE_PROTECTION_ENABLED" &&
+      google_firestore_database.events.deletion_policy == "ABANDON"
+    )
+    error_message = "The durable store must be the protected, Standard native database with no paid PITR."
+  }
+
+  assert {
+    condition = (
+      google_project_iam_member.runtime_firestore.role == "roles/datastore.user" &&
+      google_project_iam_member.runtime_firestore.member == "serviceAccount:reader-synthetic@project-synthetic.iam.gserviceaccount.com" &&
+      google_project_iam_member.runtime_firestore.condition[0].expression == "resource.name == \"projects/project-synthetic/databases/(default)\""
+    )
+    error_message = "The runtime grant must be data-only and confined to the exact Firestore database."
+  }
+
+  assert {
     condition     = output.identity_callback_url == "https://tracker.martcoca.com/__/auth/handler"
     error_message = "The callback URL must use the settled hostname."
   }

@@ -17,7 +17,8 @@ type EventRecord struct {
 // EventStore preserves packet events and atomically compares every touched stream's
 // current version before appending. Implementations must never update or delete events.
 type EventStore interface {
-	Load() ([]EventRecord, error)
+	// Load returns every stream when packetIDs is empty, or only the named streams.
+	Load(packetIDs ...PacketID) ([]EventRecord, error)
 	Append(expected map[PacketID]Version, records []EventRecord) error
 }
 
@@ -38,11 +39,26 @@ func NewMemoryEventStore() *MemoryEventStore {
 	}
 }
 
-func (store *MemoryEventStore) Load() ([]EventRecord, error) {
+func (store *MemoryEventStore) Load(packetIDs ...PacketID) ([]EventRecord, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	return cloneRecords(store.records), nil
+	if len(packetIDs) == 0 {
+		return cloneRecords(store.records), nil
+	}
+	wanted := make(map[PacketID]struct{}, len(packetIDs))
+	for _, packetID := range packetIDs {
+		wanted[packetID] = struct{}{}
+	}
+	result := make([]EventRecord, 0)
+	for _, record := range store.records {
+		if _, ok := wanted[record.PacketID]; ok {
+			result = append(result, EventRecord{
+				PacketID: record.PacketID, StreamVersion: record.StreamVersion, Event: cloneEvent(record.Event),
+			})
+		}
+	}
+	return result, nil
 }
 
 func (store *MemoryEventStore) Append(expected map[PacketID]Version, records []EventRecord) error {

@@ -44,6 +44,10 @@ resource "google_cloud_run_v2_service" "reader" {
         value = var.project_id
       }
       env {
+        name  = "FIRESTORE_DATABASE_ID"
+        value = var.firestore_database_id
+      }
+      env {
         name  = "PACKET_EXPORT_URL"
         value = var.packet_export_url
       }
