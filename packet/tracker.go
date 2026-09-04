@@ -27,6 +27,7 @@ type Tracker struct {
 	projection      map[PacketID]Packet
 	eventIDs        map[EventID]struct{}
 	projectionReady bool
+	store           EventStore
 	tenantValidator TenantValidator
 	now             func() time.Time
 	newEventID      func() (EventID, error)
@@ -35,18 +36,35 @@ type Tracker struct {
 // NewTracker returns an empty tracker backed by an in-memory append-only log. Issuing is
 // unavailable without a supplied, verified tenant directory.
 func NewTracker(tenantValidator TenantValidator) (*Tracker, error) {
+	return NewTrackerWithStore(tenantValidator, NewMemoryEventStore())
+}
+
+// NewTrackerWithStore rebuilds the disposable projection from an append-only store.
+func NewTrackerWithStore(tenantValidator TenantValidator, store EventStore) (*Tracker, error) {
 	if tenantValidator == nil {
 		return nil, ErrTenantValidatorRequired
 	}
-	return newTracker(time.Now, randomEventID, tenantValidator), nil
+	if store == nil {
+		return nil, fmt.Errorf("event store is required")
+	}
+	tracker := newTrackerWithStore(time.Now, randomEventID, tenantValidator, store)
+	if err := tracker.RebuildProjection(); err != nil {
+		return nil, err
+	}
+	return tracker, nil
 }
 
 func newTracker(now func() time.Time, newEventID func() (EventID, error), tenantValidator TenantValidator) *Tracker {
+	return newTrackerWithStore(now, newEventID, tenantValidator, NewMemoryEventStore())
+}
+
+func newTrackerWithStore(now func() time.Time, newEventID func() (EventID, error), tenantValidator TenantValidator, store EventStore) *Tracker {
 	return &Tracker{
 		streams:         make(map[PacketID][]Event),
 		projection:      make(map[PacketID]Packet),
 		eventIDs:        make(map[EventID]struct{}),
 		projectionReady: true,
+		store:           store,
 		tenantValidator: tenantValidator,
 		now:             now,
 		newEventID:      newEventID,
@@ -66,7 +84,7 @@ func (t *Tracker) Issue(command IssueCommand) (Packet, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if err := t.requireProjectionLocked(); err != nil {
+	if err := t.prepareLocked(); err != nil {
 		return Packet{}, err
 	}
 	if _, exists := t.streams[command.PacketID]; exists {
@@ -97,6 +115,9 @@ func (t *Tracker) Take(command TakeCommand) (Packet, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if err := t.prepareLocked(); err != nil {
+		return Packet{}, err
+	}
 	current, err := t.currentLocked(command.PacketID, command.ExpectedVersion)
 	if err != nil {
 		return Packet{}, err
@@ -129,6 +150,9 @@ func (t *Tracker) Comment(command CommentCommand) (Packet, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if err := t.prepareLocked(); err != nil {
+		return Packet{}, err
+	}
 	if _, err := t.currentLocked(command.PacketID, command.ExpectedVersion); err != nil {
 		return Packet{}, err
 	}
@@ -152,6 +176,9 @@ func (t *Tracker) Transition(command TransitionCommand) (Packet, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if err := t.prepareLocked(); err != nil {
+		return Packet{}, err
+	}
 	current, err := t.currentLocked(command.PacketID, command.ExpectedVersion)
 	if err != nil {
 		return Packet{}, err
@@ -190,6 +217,9 @@ func (t *Tracker) Supersede(command SupersedeCommand) (Packet, Packet, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if err := t.prepareLocked(); err != nil {
+		return Packet{}, Packet{}, err
+	}
 	if _, err := t.currentLocked(command.PacketID, command.ExpectedVersion); err != nil {
 		return Packet{}, Packet{}, err
 	}
@@ -238,10 +268,10 @@ func (t *Tracker) Supersede(command SupersedeCommand) (Packet, Packet, error) {
 
 // Packet returns a defensive copy of the current projection for one packet.
 func (t *Tracker) Packet(id PacketID) (Packet, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	if err := t.requireProjectionLocked(); err != nil {
+	if err := t.prepareLocked(); err != nil {
 		return Packet{}, err
 	}
 	packet, ok := t.projection[id]
@@ -253,10 +283,10 @@ func (t *Tracker) Packet(id PacketID) (Packet, error) {
 
 // Packets returns defensive snapshots sorted by packet id.
 func (t *Tracker) Packets() ([]Packet, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	if err := t.requireProjectionLocked(); err != nil {
+	if err := t.prepareLocked(); err != nil {
 		return nil, err
 	}
 	packets := make([]Packet, 0, len(t.projection))
@@ -271,8 +301,12 @@ func (t *Tracker) Packets() ([]Packet, error) {
 
 // History returns defensive copies of the events for one packet in append order.
 func (t *Tracker) History(id PacketID) ([]Event, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if err := t.refreshLocked(t.projectionReady); err != nil {
+		return nil, err
+	}
 
 	history, ok := t.streams[id]
 	if !ok {
@@ -300,24 +334,59 @@ func (t *Tracker) RebuildProjection() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	return t.refreshLocked(true)
+}
+
+func (t *Tracker) refreshLocked(rebuildProjection bool) error {
+	records, err := t.store.Load()
+	if err != nil {
+		return fmt.Errorf("load event store: %w", err)
+	}
+	sortRecords(records)
+
+	events := make([]storedEvent, 0, len(records))
+	streams := make(map[PacketID][]Event)
 	rebuilt := make(map[PacketID]Packet)
 	eventIDs := make(map[EventID]struct{})
-	for _, stored := range t.events {
-		meta := stored.event.Metadata()
+	for _, record := range records {
+		want := Version(len(streams[record.PacketID]) + 1)
+		if record.StreamVersion != want {
+			return fmt.Errorf("%w: packet %q stream version is %d, want %d", ErrInvalidEvent, record.PacketID, record.StreamVersion, want)
+		}
+		if record.Event == nil || eventPacketID(record.Event) != record.PacketID {
+			return fmt.Errorf("%w: event does not belong to packet %q", ErrInvalidEvent, record.PacketID)
+		}
+		meta := record.Event.Metadata()
 		if _, duplicate := eventIDs[meta.ID]; duplicate {
 			return fmt.Errorf("%w: duplicate event id %q", ErrInvalidEvent, meta.ID)
 		}
-		packet := rebuilt[stored.packetID]
-		if err := applyEvent(&packet, stored.event); err != nil {
-			return fmt.Errorf("rebuild %q at version %d: %w", stored.packetID, packet.version+1, err)
+		if rebuildProjection {
+			packet := rebuilt[record.PacketID]
+			if err := applyEvent(&packet, record.Event); err != nil {
+				return fmt.Errorf("rebuild %q at version %d: %w", record.PacketID, packet.version+1, err)
+			}
+			rebuilt[record.PacketID] = packet
 		}
-		rebuilt[stored.packetID] = packet
+		copied := cloneEvent(record.Event)
+		events = append(events, storedEvent{packetID: record.PacketID, event: copied})
+		streams[record.PacketID] = append(streams[record.PacketID], copied)
 		eventIDs[meta.ID] = struct{}{}
 	}
-	t.projection = rebuilt
-	t.eventIDs = eventIDs
-	t.projectionReady = true
+	t.events = events
+	t.streams = streams
+	if rebuildProjection {
+		t.projection = rebuilt
+		t.eventIDs = eventIDs
+		t.projectionReady = true
+	}
 	return nil
+}
+
+func (t *Tracker) prepareLocked() error {
+	if err := t.requireProjectionLocked(); err != nil {
+		return err
+	}
+	return t.refreshLocked(true)
 }
 
 func (t *Tracker) requireProjectionLocked() error {
@@ -353,6 +422,9 @@ func (t *Tracker) nextMetadataLocked(actor Actor) (Metadata, error) {
 func (t *Tracker) appendLocked(events ...Event) error {
 	working := make(map[PacketID]Packet)
 	batchIDs := make(map[EventID]struct{})
+	expected := make(map[PacketID]Version)
+	nextVersion := make(map[PacketID]Version)
+	records := make([]EventRecord, 0, len(events))
 
 	for _, event := range events {
 		packetID := eventPacketID(event)
@@ -369,20 +441,32 @@ func (t *Tracker) appendLocked(events ...Event) error {
 		packet, touched := working[packetID]
 		if !touched {
 			packet = clonePacket(t.projection[packetID])
+			expected[packetID] = Version(len(t.streams[packetID]))
+			nextVersion[packetID] = expected[packetID] + 1
 		}
 		if err := applyEvent(&packet, event); err != nil {
 			return err
 		}
 		working[packetID] = packet
 		batchIDs[meta.ID] = struct{}{}
+		records = append(records, EventRecord{
+			PacketID:      packetID,
+			StreamVersion: nextVersion[packetID],
+			Event:         event,
+		})
+		nextVersion[packetID]++
+	}
+	if err := t.store.Append(expected, records); err != nil {
+		_ = t.refreshLocked(true)
+		return err
 	}
 
-	for _, event := range events {
-		packetID := eventPacketID(event)
-		copied := cloneEvent(event)
+	for _, record := range records {
+		copied := cloneEvent(record.Event)
+		packetID := record.PacketID
 		t.events = append(t.events, storedEvent{packetID: packetID, event: copied})
 		t.streams[packetID] = append(t.streams[packetID], copied)
-		t.eventIDs[event.Metadata().ID] = struct{}{}
+		t.eventIDs[record.Event.Metadata().ID] = struct{}{}
 	}
 	for packetID, packet := range working {
 		t.projection[packetID] = packet
