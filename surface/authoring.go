@@ -133,6 +133,12 @@ func (service *Service) issueDraft(principal identity.Principal, request *http.R
 		}
 		response.Parent = &parent
 	}
+	if service.onIssue != nil {
+		// The issue itself is already durable. Publication is attempted before returning so
+		// Cloud Run's request-scoped CPU cannot freeze the work halfway through, while the
+		// publisher retains the last live Hosting release on any failure.
+		service.onIssue(request.Context())
+	}
 	return response, nil
 }
 

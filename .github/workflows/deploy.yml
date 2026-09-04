@@ -124,10 +124,25 @@ jobs:
           npm run build
           printf '%s\n' "$GITHUB_SHA" > "dist/source-commit-$GITHUB_SHA.txt"
 
-      - name: Build the packet export through the product model
+      - name: Build the repository migration export through the product model
         env:
           TENANT_DIRECTORY_URL: https://identity.martcoca.com/tenant-directory.json
-        run: GOWORK=off go run ./cmd/publish-packet-export -repository . -output dist
+        run: >-
+          GOWORK=off go run ./cmd/publish-packet-export
+          -repository . -output "$RUNNER_TEMP/repository-packet-export"
+
+      # A code deploy must not erase app-authored packets. Keep the exact verified public
+      # union as packets.json, while repository-packets.json advances independently so the
+      # app can reconcile git-only packets on its next issue. If the public union cannot
+      # be verified, fail before touching Hosting and retain its current release.
+      - name: Preserve the verified app union and stage the repository source
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/repository-packet-export/packets.json" dist/repository-packets.json
+          curl -fsS https://tracker.martcoca.com/packets.json -o "$RUNNER_TEMP/live-packets.json"
+          GOWORK=off go run ./cmd/verify-packet-export \
+            -input "$RUNNER_TEMP/live-packets.json" -output dist/packets.json \
+            -renew-repository martcoca/work-tracker -renew-commit "$GITHUB_SHA"
 
       - name: Exchange exact-main identity for the deploy-only account
         uses: google-github-actions/auth@v3
@@ -180,6 +195,12 @@ jobs:
           done
           echo '::error::live packet and authority exports did not verify'
           exit 1
+
+      - name: Verify the public repository migration source
+        run: |
+          set -euo pipefail
+          curl -fsS https://tracker.martcoca.com/repository-packets.json -o "$RUNNER_TEMP/repository-packets.json"
+          GOWORK=off go run ./cmd/verify-packet-export -input "$RUNNER_TEMP/repository-packets.json"
 
       - name: Plan the exact pushed digest
         env:

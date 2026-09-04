@@ -52,6 +52,10 @@ resource "google_cloud_run_v2_service" "reader" {
         value = var.packet_export_url
       }
       env {
+        name  = "REPOSITORY_PACKET_EXPORT_URL"
+        value = var.repository_packet_export_url
+      }
+      env {
         name  = "TENANT_DIRECTORY_URL"
         value = var.tenant_directory_url
       }
@@ -66,6 +70,14 @@ resource "google_cloud_run_v2_service" "reader" {
       env {
         name  = "EXPORT_FETCH_TIMEOUT"
         value = var.export_fetch_timeout
+      }
+      env {
+        name  = "HOSTING_SITE_ID"
+        value = var.hosting_site_id
+      }
+      env {
+        name  = "SOURCE_COMMIT"
+        value = var.source_commit
       }
 
       startup_probe {
