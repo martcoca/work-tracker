@@ -37,6 +37,7 @@ run "immutable_zero_idle_revision" {
       for item in google_cloud_run_v2_service.reader.template[0].containers[0].env : item.name => item.value
       }) == tomap({
       FIREBASE_PROJECT_ID     = "project-synthetic"
+      FIRESTORE_DATABASE_ID   = "(default)"
       PACKET_EXPORT_URL       = "https://tracker.martcoca.com/packets.json"
       TENANT_DIRECTORY_URL    = "https://identity.martcoca.com/tenant-directory.json"
       AGENT_GRANTS_URL        = "https://identity.martcoca.com/agent-grants.json"

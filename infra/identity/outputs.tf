@@ -8,6 +8,11 @@ output "identity_logout_url" {
   value       = local.logout_url
 }
 
+output "firestore_database_id" {
+  description = "Durable packet event database selected for the Cloud Run runtime."
+  value       = google_firestore_database.events.name
+}
+
 output "apply_prerequisites" {
   description = "Human-owned facts deliberately not created by this plan."
   value = {

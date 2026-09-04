@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/martcoca/work-tracker/eventstore"
 	"github.com/martcoca/work-tracker/identity"
 	"github.com/martcoca/work-tracker/runtimeexport"
 	"github.com/martcoca/work-tracker/surface"
@@ -41,7 +42,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	service, err := surface.NewServiceFromSource(exports, verifier)
+	store, err := eventstore.NewFirestore(context.Background(), eventstore.Config{
+		ProjectID:  projectID,
+		DatabaseID: valueOrDefault("FIRESTORE_DATABASE_ID", eventstore.DefaultDatabaseID),
+	})
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	service, err := surface.NewServiceFromSourceWithStore(exports, verifier, store)
 	if err != nil {
 		return err
 	}

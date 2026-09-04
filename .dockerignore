@@ -1,5 +1,6 @@
 *
 !go.mod
+!go.sum
 !authoring
 !authoring/**
 !cmd
@@ -7,6 +8,8 @@
 !cmd/tracker-web/**
 !contract
 !contract/**
+!eventstore
+!eventstore/**
 !identity
 !identity/**
 !internal

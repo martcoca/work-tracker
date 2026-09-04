@@ -7,6 +7,7 @@ locals {
   required_services = toset([
     "firebase.googleapis.com",
     "firebasehosting.googleapis.com",
+    "firestore.googleapis.com",
     "iam.googleapis.com",
     "identitytoolkit.googleapis.com",
     "run.googleapis.com",
@@ -76,7 +77,7 @@ resource "google_identity_platform_default_supported_idp_config" "google" {
 resource "google_service_account" "reader" {
   project      = var.project_id
   account_id   = var.runtime_service_account_name
-  display_name = "Work Tracker read-only runtime"
+  display_name = "Work Tracker runtime"
 
   create_ignore_already_exists = false
 
@@ -85,6 +86,36 @@ resource "google_service_account" "reader" {
   }
 
   depends_on = [google_project_service.required]
+}
+
+resource "google_firestore_database" "events" {
+  project     = var.project_id
+  name        = "(default)"
+  location_id = var.region
+  type        = "FIRESTORE_NATIVE"
+
+  database_edition                  = "STANDARD"
+  point_in_time_recovery_enablement = "POINT_IN_TIME_RECOVERY_DISABLED"
+  delete_protection_state           = "DELETE_PROTECTION_ENABLED"
+  deletion_policy                   = "ABANDON"
+
+  depends_on = [google_project_service.required]
+}
+
+# The server client uses IAM rather than Firebase security rules. This member resource is
+# additive, and its condition confines the application data role to one exact database.
+resource "google_project_iam_member" "runtime_firestore" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${var.runtime_service_account_name}@${var.project_id}.iam.gserviceaccount.com"
+
+  condition {
+    title       = "work-tracker-default-firestore-only"
+    description = "Confine the Work Tracker runtime to its durable event database."
+    expression  = "resource.name == \"projects/${var.project_id}/databases/${google_firestore_database.events.name}\""
+  }
+
+  depends_on = [google_service_account.reader, google_firestore_database.events]
 }
 
 # Firebase Hosting invokes the same-origin API without a Google IAM credential. The API

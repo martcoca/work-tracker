@@ -83,13 +83,18 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Test offline
+      # Download the checksum-locked official cloud client once, then prove neither tests nor
+      # vet can resolve any undeclared or missing module while they execute.
+      - name: Download locked modules
+        run: go mod download
+
+      - name: Test with module lookup disabled
         env:
           GOWORK: "off"
           GOPROXY: "off"
         run: go test ./...
 
-      - name: Vet offline
+      - name: Vet with module lookup disabled
         env:
           GOWORK: "off"
           GOPROXY: "off"

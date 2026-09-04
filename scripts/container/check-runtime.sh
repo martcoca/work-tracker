@@ -28,6 +28,7 @@ docker run --detach --name "$APP_CONTAINER" \
   --network "container:$FIXTURE_CONTAINER" \
   --env PORT=8080 \
   --env FIREBASE_PROJECT_ID=project-synthetic \
+  --env FIRESTORE_EMULATOR_HOST=127.0.0.1:18081 \
   --env PACKET_EXPORT_URL=http://127.0.0.1:18080/packets.json \
   --env TENANT_DIRECTORY_URL=http://127.0.0.1:18080/tenant-directory.json \
   --env AGENT_GRANTS_URL=http://127.0.0.1:18080/agent-grants.json \

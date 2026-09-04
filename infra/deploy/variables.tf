@@ -27,9 +27,20 @@ variable "hosting_site_id" {
 }
 
 variable "runtime_service_account_name" {
-  description = "Project-local ID of the existing zero-permission runtime identity."
+  description = "Project-local ID of the existing runtime identity with conditioned Firestore data access."
   type        = string
   nullable    = false
+}
+
+variable "firestore_database_id" {
+  description = "Existing Firestore database containing the append-only packet event log."
+  type        = string
+  default     = "(default)"
+
+  validation {
+    condition     = var.firestore_database_id == "(default)"
+    error_message = "The runtime is confined to the plan-managed default Firestore database."
+  }
 }
 
 variable "container_image" {

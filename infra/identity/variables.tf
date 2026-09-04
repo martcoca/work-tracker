@@ -38,7 +38,7 @@ variable "custom_domain_acme_challenge" {
 }
 
 variable "runtime_service_account_name" {
-  description = "Project-local id for the zero-permission Cloud Run runtime identity."
+  description = "Project-local id for the Cloud Run runtime identity; the plan grants only conditioned Firestore data access."
   type        = string
   nullable    = false
 }
