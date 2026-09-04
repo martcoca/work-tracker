@@ -5,17 +5,23 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"cloud.google.com/go/firestore/apiv1/firestorepb"
 	"github.com/martcoca/work-tracker/contract"
 	"github.com/martcoca/work-tracker/packetexport"
 	"github.com/martcoca/work-tracker/runtimeexport"
 	"github.com/martcoca/work-tracker/tenant"
+	"google.golang.org/grpc"
 )
 
 func main() {
+	if err := serveEmptyFirestore(); err != nil {
+		log.Fatal(err)
+	}
 	documents, err := buildDocuments(time.Now().UTC().Truncate(time.Second))
 	if err != nil {
 		log.Fatal(err)
@@ -33,6 +39,32 @@ func main() {
 	}
 	log.Printf("synthetic container exports listening on %s", server.Addr)
 	log.Fatal(server.ListenAndServe())
+}
+
+// serveEmptyFirestore gives the production binary a protocol-real, credential-free empty
+// database during its container smoke test. It is compiled only into the fixture target;
+// the production binary has no memory-store or emulator fallback.
+func serveEmptyFirestore() error {
+	listener, err := net.Listen("tcp", ":18081")
+	if err != nil {
+		return fmt.Errorf("listen for synthetic Firestore: %w", err)
+	}
+	server := grpc.NewServer()
+	firestorepb.RegisterFirestoreServer(server, emptyFirestore{})
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			log.Printf("synthetic Firestore stopped: %v", err)
+		}
+	}()
+	return nil
+}
+
+type emptyFirestore struct {
+	firestorepb.UnimplementedFirestoreServer
+}
+
+func (emptyFirestore) RunQuery(*firestorepb.RunQueryRequest, firestorepb.Firestore_RunQueryServer) error {
+	return nil
 }
 
 func buildDocuments(publishedAt time.Time) (map[string][]byte, error) {
