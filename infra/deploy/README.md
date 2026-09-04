@@ -5,6 +5,10 @@ is `work-tracker/delivery`; the bucket is supplied at initialization and is not 
 Every apply requires an immutable image digest and a full merge commit. The commit is set
 on the Cloud Run revision as the `source-commit` annotation.
 
+The revision explicitly receives `FIRESTORE_DATABASE_ID=(default)`. Its existing runtime
+identity is granted the conditioned data-plane role by `infra/identity`; delivery cannot
+grant or widen that role.
+
 The Firebase CLI configuration is an output of the same applied inputs. It deliberately
 uses the CLI schema (`source`, header lists, and `pinTag`); no REST `ServingConfig` is
 manufactured from it. The deploy workflow writes this output to a temporary `firebase.json`

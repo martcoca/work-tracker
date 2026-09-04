@@ -1,8 +1,9 @@
 # Identity plan handoff
 
-This directory owns the slowly-changing sign-in, Firebase project/site, runtime identity,
-and public invocation policy for `tracker.martcoca.com`. Cloud Run revision delivery moved
-to `infra/deploy`; this foundation deliberately does not receive the merge deploy identity.
+This directory owns the slowly-changing sign-in, Firebase project/site, durable event
+database, runtime identity, and public invocation policy for `tracker.martcoca.com`. Cloud
+Run revision delivery moved to `infra/deploy`; this foundation deliberately does not
+receive the merge deploy identity.
 
 The plan expects an existing billing-enabled project and protected values for every variable.
 Real identifiers and the Google OAuth client secret stay outside the repository. The Google
@@ -22,6 +23,30 @@ identifier, so the output stays accurate if Firebase rotates it.
 Pre-provisioned Identity Platform users with signed `tenant_id` custom claims also remain
 apply prerequisites. No merge workflow receives the Google OAuth client secret or authority
 to change Identity Platform.
+
+The packet event log uses the `(default)` Firestore Native database in Standard edition,
+located with Cloud Run. It has no provisioned capacity or warm replica. Paid point-in-time
+recovery is disabled, database deletion protection is enabled, and the OpenTofu deletion
+policy abandons rather than deletes it. The runtime receives only `roles/datastore.user`,
+conditioned on the exact default database resource. It receives no database administration,
+backup, import/export, IAM-management, or project-wide deployment role.
+
+Firestore Standard provides one free database per project with 1 GiB storage, 50,000
+document reads/day, 20,000 writes/day, 20,000 deletes/day, and 10 GiB outbound transfer per
+month. This plan provisions no paid-at-idle feature. In `us-central1` beyond the free tier,
+published list prices are $0.03/100,000 reads, $0.09/100,000 writes, $0.01/100,000 deletes,
+and about $0.15/GiB-month of stored data. See the
+[Firestore pricing page](https://cloud.google.com/firestore/pricing).
+
+After the Founder applies this foundation change, an authorized real-store check can use
+an existing project without printing its identifier:
+
+```sh
+FIRESTORE_INTEGRATION_PROJECT_ID=... scripts/cloud/gcp/check-firestore-store.sh
+```
+
+The check leaves a uniquely named, small append-only namespace in place as evidence; it
+does not delete or rewrite events.
 
 The checked synthetic plan is produced without contacting a project:
 

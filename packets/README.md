@@ -17,7 +17,7 @@ Check, and enough context to execute without reading another repository.
 | 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | done | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
 | 7 | [`0004-E05-T03.md`](0004-E05-T03.md) | done | **Publish the packet export.** The app is deployed, authenticating, and empty: `packetexport.Publish` exists and nothing calls it, so `packets.json` has never existed |
 | 8 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
-| 9 | [`0004-E07-T01.md`](0004-E07-T01.md) | not started | **Give the app a durable store.** The Technical Specification names Firestore; nothing delivered it, so every authored packet lives until the container recycles |
+| 9 | [`0004-E07-T01.md`](0004-E07-T01.md) | in progress | **Give the app a durable store.** The Technical Specification names Firestore; nothing delivered it, so every authored packet lives until the container recycles |
 | 10 | [`0004-E07-T02.md`](0004-E07-T02.md) | not started | Publish the export from the app rather than from git, so the app can become the system of record |
 | 11 | [`0004-E05-T04.md`](0004-E05-T04.md) | not started | **Rollback must reach a previous version.** E05-T02's mechanism cannot: each deploy reclaims the previous traffic tag, so the only reachable revision is the one already serving |
 | 12 | [`0004-E05-T02.md`](0004-E05-T02.md) | in progress | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
