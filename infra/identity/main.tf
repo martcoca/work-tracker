@@ -118,6 +118,18 @@ resource "google_project_iam_member" "runtime_firestore" {
   depends_on = [google_service_account.reader, google_firestore_database.events]
 }
 
+# The app publisher clones the current live version, replaces only packets.json, and
+# releases the clone. Firebase Hosting exposes no file- or site-scoped IAM writer and
+# does not support custom roles, so Hosting Admin in this dedicated tracker project is
+# the narrowest supported grant. The binary contains no site create/delete operation.
+resource "google_project_iam_member" "runtime_hosting" {
+  project = var.project_id
+  role    = "roles/firebasehosting.admin"
+  member  = "serviceAccount:${var.runtime_service_account_name}@${var.project_id}.iam.gserviceaccount.com"
+
+  depends_on = [google_service_account.reader, google_firebase_hosting_site.tracker]
+}
+
 # Firebase Hosting invokes the same-origin API without a Google IAM credential. The API
 # itself verifies every Identity Platform ID token and tenant claim before reading data.
 resource "google_cloud_run_v2_service_iam_member" "public_entrypoint" {

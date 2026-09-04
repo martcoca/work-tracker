@@ -76,8 +76,8 @@ resource "google_artifact_registry_repository_iam_member" "reader" {
   member     = local.deployer_member
 }
 
-# Attaching an identity to a revision requires actAs. Scope it to the runtime identity,
-# which itself has no project roles.
+# Attaching an identity to a revision requires actAs. Scope it to the runtime identity;
+# its own data and export-publication grants remain independently Founder-applied.
 resource "google_service_account_iam_member" "runtime_user" {
   service_account_id = local.runtime_service_account
   role               = "roles/iam.serviceAccountUser"

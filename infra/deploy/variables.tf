@@ -76,6 +76,17 @@ variable "packet_export_url" {
   }
 }
 
+variable "repository_packet_export_url" {
+  description = "Public transitional repository-only packet export retained until E04."
+  type        = string
+  default     = "https://tracker.martcoca.com/repository-packets.json"
+
+  validation {
+    condition     = can(regex("^https://[^?#]+$", var.repository_packet_export_url))
+    error_message = "repository_packet_export_url must be a query-free HTTPS URL."
+  }
+}
+
 variable "tenant_directory_url" {
   description = "Public static tenant-directory export fetched by the reader."
   type        = string
