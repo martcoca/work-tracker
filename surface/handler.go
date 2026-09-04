@@ -120,13 +120,33 @@ func NewService(snapshot *Snapshot, verifier identity.Verifier) (*Service, error
 // NewServiceFromSource keeps outbound refresh work outside handlers while allowing every
 // request and issue-time tenant check to see the latest verified snapshot.
 func NewServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier) (*Service, error) {
+	return newServiceFromSource(snapshots, verifier, nil)
+}
+
+// NewServiceFromSourceWithStore uses a durable packet event log after authority exports
+// have been verified by the caller. A missing snapshot is rejected before touching the
+// store, preserving authority's fail-closed startup order.
+func NewServiceFromSourceWithStore(snapshots SnapshotSource, verifier identity.Verifier, store packet.EventStore) (*Service, error) {
+	if store == nil {
+		return nil, errors.New("packet event store is required")
+	}
+	return newServiceFromSource(snapshots, verifier, store)
+}
+
+func newServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier, store packet.EventStore) (*Service, error) {
 	if snapshots == nil || snapshots.CurrentSnapshot() == nil || verifier == nil {
 		return nil, errors.New("snapshot and identity verifier are required")
 	}
 	if err := ValidateAuthoringRoutes(builtRoutes); err != nil {
 		return nil, err
 	}
-	tracker, err := packet.NewTracker(dynamicTenantValidator{snapshots: snapshots})
+	var tracker *packet.Tracker
+	var err error
+	if store == nil {
+		tracker, err = packet.NewTracker(dynamicTenantValidator{snapshots: snapshots})
+	} else {
+		tracker, err = packet.NewTrackerWithStore(dynamicTenantValidator{snapshots: snapshots}, store)
+	}
 	if err != nil {
 		return nil, err
 	}
