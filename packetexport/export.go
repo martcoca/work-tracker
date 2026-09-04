@@ -91,19 +91,30 @@ type Verified struct {
 
 // Build snapshots every packet and wraps the sorted records in the shared envelope.
 func Build(tracker *packet.Tracker, publication contract.Publication) (contract.Envelope, error) {
-	packets, err := tracker.Packets()
+	records, err := Records(tracker)
 	if err != nil {
 		return contract.Envelope{}, err
+	}
+	return BuildRecords(records, publication)
+}
+
+// Records snapshots every packet from the tracker's current event-store projection.
+// Packets() performs a complete store reload, so this is also the publication boundary
+// at which events written by another service instance become visible.
+func Records(tracker *packet.Tracker) ([]Record, error) {
+	packets, err := tracker.Packets()
+	if err != nil {
+		return nil, err
 	}
 	records := make([]Record, 0, len(packets))
 	for _, projected := range packets {
 		history, err := tracker.History(projected.ID())
 		if err != nil {
-			return contract.Envelope{}, err
+			return nil, err
 		}
 		records = append(records, makeRecord(projected, history))
 	}
-	return buildRecords(records, publication)
+	return records, nil
 }
 
 // SnapshotRecord returns the same complete projection used by an export for one packet.
@@ -120,7 +131,27 @@ func SnapshotRecord(tracker *packet.Tracker, id packet.PacketID) (Record, error)
 	return makeRecord(projected, history), nil
 }
 
-func buildRecords(records []Record, publication contract.Publication) (contract.Envelope, error) {
+// Reconcile combines the transitional repository export with durable app records. An app
+// record wins the complete packet projection when an id exists in both sources. This
+// prevents duplicates and makes the durable event log authoritative once a packet has
+// migrated, while leaving repository-only packets readable until E04 retires that path.
+func Reconcile(repositoryRecords, appRecords []Record) []Record {
+	byID := make(map[string]Record, len(repositoryRecords)+len(appRecords))
+	for _, record := range repositoryRecords {
+		byID[record.ID] = record
+	}
+	for _, record := range appRecords {
+		byID[record.ID] = record
+	}
+	reconciled := make([]Record, 0, len(byID))
+	for _, record := range byID {
+		reconciled = append(reconciled, record)
+	}
+	return cloneRecords(reconciled)
+}
+
+// BuildRecords wraps complete packet records in the same envelope used by Build.
+func BuildRecords(records []Record, publication contract.Publication) (contract.Envelope, error) {
 	records = cloneRecords(records)
 	sort.Slice(records, func(left, right int) bool {
 		return records[left].ID < records[right].ID
@@ -131,6 +162,20 @@ func buildRecords(records []Record, publication contract.Publication) (contract.
 // Serialize snapshots and canonically serializes every packet.
 func Serialize(tracker *packet.Tracker, publication contract.Publication) ([]byte, contract.Envelope, error) {
 	envelope, err := Build(tracker, publication)
+	if err != nil {
+		return nil, contract.Envelope{}, err
+	}
+	serialized, err := contract.Serialize(envelope)
+	if err != nil {
+		return nil, contract.Envelope{}, err
+	}
+	return serialized, envelope, nil
+}
+
+// SerializeRecords canonically serializes already-projected records. It is used by the
+// app publisher after reconciling the verified repository export with its durable store.
+func SerializeRecords(records []Record, publication contract.Publication) ([]byte, contract.Envelope, error) {
+	envelope, err := BuildRecords(records, publication)
 	if err != nil {
 		return nil, contract.Envelope{}, err
 	}
