@@ -63,10 +63,6 @@ func run(input io.Reader, output io.Writer) error {
 	if len(resources) == 0 {
 		return errors.New("plan contains no resources")
 	}
-	runtimeMember, err := expectedRuntimeMember(resources)
-	if err != nil {
-		return err
-	}
 	seen := make(map[string]bool)
 	for _, planned := range resources {
 		if !allowedTypes[planned.Type] {
@@ -99,6 +95,10 @@ func run(input io.Reader, output io.Writer) error {
 				return err
 			}
 		case "google_project_iam_member":
+			runtimeMember, err := expectedRuntimeMember(resources)
+			if err != nil {
+				return err
+			}
 			if err := validateFirestoreMember(planned, runtimeMember); err != nil {
 				return err
 			}
