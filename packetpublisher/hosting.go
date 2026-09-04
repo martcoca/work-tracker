@@ -269,6 +269,12 @@ func (destination *HostingDestination) request(ctx context.Context, method, path
 }
 
 func (destination *HostingDestination) validVersionName(name string) bool {
+	if validResourceName(name, "sites/"+destination.siteID+"/versions/", "") {
+		return true
+	}
+	// The current API accepts project-qualified routes while its Version contract still
+	// documents legacy site-qualified names. Accept the project-qualified response shape
+	// as well, but only when it identifies this exact site and one version segment.
 	parts := strings.Split(name, "/")
 	return len(parts) == 6 && parts[0] == "projects" && parts[1] != "" &&
 		parts[2] == "sites" && parts[3] == destination.siteID &&

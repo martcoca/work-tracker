@@ -27,20 +27,20 @@ func TestHostingDestinationClonesLiveVersionBeforeReplacingPacketExport(t *testi
 		response.Header().Set("Content-Type", "application/json")
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/v1beta1/projects/-/sites/tracker-site/channels/live":
-			writeFixtureJSON(response, map[string]any{"release": map[string]any{"version": map[string]string{"name": "projects/synthetic/sites/tracker-site/versions/live-old"}}})
+			writeFixtureJSON(response, map[string]any{"release": map[string]any{"version": map[string]string{"name": "sites/tracker-site/versions/live-old"}}})
 		case request.Method == http.MethodPost && request.URL.Path == "/v1beta1/projects/-/sites/tracker-site/versions:clone":
 			var body map[string]any
 			_ = json.NewDecoder(request.Body).Decode(&body)
-			if body["sourceVersion"] != "projects/synthetic/sites/tracker-site/versions/live-old" || body["finalize"] != false {
+			if body["sourceVersion"] != "sites/tracker-site/versions/live-old" || body["finalize"] != false {
 				t.Errorf("clone body = %#v", body)
 			}
 			writeFixtureJSON(response, map[string]any{"name": "projects/synthetic/operations/clone-1"})
 		case request.Method == http.MethodGet && request.URL.Path == "/v1beta1/projects/synthetic/operations/clone-1":
 			writeFixtureJSON(response, map[string]any{
 				"name": "projects/synthetic/operations/clone-1", "done": true,
-				"response": map[string]string{"name": "projects/synthetic/sites/tracker-site/versions/app-new"},
+				"response": map[string]string{"name": "sites/tracker-site/versions/app-new"},
 			})
-		case request.Method == http.MethodPost && request.URL.Path == "/v1beta1/projects/synthetic/sites/tracker-site/versions/app-new:populateFiles":
+		case request.Method == http.MethodPost && request.URL.Path == "/v1beta1/sites/tracker-site/versions/app-new:populateFiles":
 			var body struct {
 				Files map[string]string `json:"files"`
 			}
@@ -63,16 +63,16 @@ func TestHostingDestinationClonesLiveVersionBeforeReplacingPacketExport(t *testi
 				_ = reader.Close()
 			}
 			writeFixtureJSON(response, map[string]any{})
-		case request.Method == http.MethodPatch && request.URL.Path == "/v1beta1/projects/synthetic/sites/tracker-site/versions/app-new":
+		case request.Method == http.MethodPatch && request.URL.Path == "/v1beta1/sites/tracker-site/versions/app-new":
 			if request.URL.Query().Get("updateMask") != "status" {
 				t.Errorf("update mask = %q", request.URL.Query().Get("updateMask"))
 			}
 			writeFixtureJSON(response, map[string]string{"status": "FINALIZED"})
 		case request.Method == http.MethodPost && request.URL.Path == "/v1beta1/projects/-/sites/tracker-site/channels/live/releases":
-			if request.URL.Query().Get("versionName") != "projects/synthetic/sites/tracker-site/versions/app-new" {
+			if request.URL.Query().Get("versionName") != "sites/tracker-site/versions/app-new" {
 				t.Errorf("release version = %q", request.URL.Query().Get("versionName"))
 			}
-			writeFixtureJSON(response, map[string]any{"version": map[string]string{"name": "projects/synthetic/sites/tracker-site/versions/app-new"}})
+			writeFixtureJSON(response, map[string]any{"version": map[string]string{"name": "sites/tracker-site/versions/app-new"}})
 		default:
 			http.Error(response, "unexpected fixture request", http.StatusNotFound)
 		}
@@ -96,10 +96,10 @@ func TestHostingDestinationClonesLiveVersionBeforeReplacingPacketExport(t *testi
 		"GET /v1beta1/projects/-/sites/tracker-site/channels/live",
 		"POST /v1beta1/projects/-/sites/tracker-site/versions:clone",
 		"GET /v1beta1/projects/synthetic/operations/clone-1",
-		"POST /v1beta1/projects/synthetic/sites/tracker-site/versions/app-new:populateFiles",
+		"POST /v1beta1/sites/tracker-site/versions/app-new:populateFiles",
 		"POST /upload/sites/tracker-site/versions/app-new/files/" + wantedHash,
-		"PATCH /v1beta1/projects/synthetic/sites/tracker-site/versions/app-new?updateMask=status",
-		"POST /v1beta1/projects/-/sites/tracker-site/channels/live/releases?versionName=" + url.QueryEscape("projects/synthetic/sites/tracker-site/versions/app-new"),
+		"PATCH /v1beta1/sites/tracker-site/versions/app-new?updateMask=status",
+		"POST /v1beta1/projects/-/sites/tracker-site/channels/live/releases?versionName=" + url.QueryEscape("sites/tracker-site/versions/app-new"),
 	}
 	if !reflect.DeepEqual(requests, want) {
 		t.Fatalf("requests:\n got %v\nwant %v", requests, want)
@@ -112,9 +112,9 @@ func TestHostingDestinationDoesNotReleaseAfterUploadFailure(t *testing.T) {
 		response.Header().Set("Content-Type", "application/json")
 		switch {
 		case request.URL.Path == "/v1beta1/projects/-/sites/tracker-site/channels/live":
-			writeFixtureJSON(response, map[string]any{"release": map[string]any{"version": map[string]string{"name": "projects/synthetic/sites/tracker-site/versions/live-old"}}})
+			writeFixtureJSON(response, map[string]any{"release": map[string]any{"version": map[string]string{"name": "sites/tracker-site/versions/live-old"}}})
 		case request.URL.Path == "/v1beta1/projects/-/sites/tracker-site/versions:clone":
-			writeFixtureJSON(response, map[string]any{"name": "projects/synthetic/operations/clone-1", "done": true, "response": map[string]string{"name": "projects/synthetic/sites/tracker-site/versions/app-new"}})
+			writeFixtureJSON(response, map[string]any{"name": "projects/synthetic/operations/clone-1", "done": true, "response": map[string]string{"name": "sites/tracker-site/versions/app-new"}})
 		case strings.HasSuffix(request.URL.Path, ":populateFiles"):
 			var body struct {
 				Files map[string]string `json:"files"`
