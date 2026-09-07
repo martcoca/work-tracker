@@ -1,0 +1,154 @@
+package agentcredential
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+)
+
+var credentialClock = time.Date(2026, time.September, 7, 12, 0, 0, 0, time.UTC)
+
+func TestCredentialIsReturnedOnceAndOnlyItsHashIsStored(t *testing.T) {
+	manager, store := deterministicManager(t)
+	issued := createCredential(t, manager, credentialClock.Add(time.Hour))
+	if !strings.HasPrefix(issued.Credential, credentialPrefix) {
+		t.Fatalf("credential has unexpected format")
+	}
+	stored := store.records[issued.Metadata.ID]
+	if stored.Hash != sha256.Sum256([]byte(issued.Credential)) {
+		t.Fatal("stored digest does not match the one-time value")
+	}
+
+	fetched, err := manager.Get(context.Background(), "tenant-a", issued.Metadata.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fetched != issued.Metadata {
+		t.Fatalf("retrieved metadata differs\n got: %#v\nwant: %#v", fetched, issued.Metadata)
+	}
+	listed, err := manager.List(context.Background(), "tenant-a")
+	if err != nil || len(listed) != 1 || listed[0] != issued.Metadata {
+		t.Fatalf("listed metadata = %#v, error=%v", listed, err)
+	}
+
+	// A correctly shaped bearer made from the stored digest proves the digest is not a
+	// credential and cannot be used as one.
+	storedValue := credentialPrefix + issued.Metadata.ID + "." + base64.RawURLEncoding.EncodeToString(stored.Hash[:])
+	if _, err := manager.Authenticate(context.Background(), "Bearer "+storedValue, credentialClock.Add(time.Minute)); !errors.Is(err, ErrUnknownCredential) {
+		t.Fatalf("stored digest authentication error = %v, want ErrUnknownCredential", err)
+	}
+	t.Logf("created credential %s; retrieval exposes metadata only; stored digest was refused", issued.Metadata.ID)
+}
+
+func TestValidCredentialResolvesOnlyIdentityAndRecordsLastUse(t *testing.T) {
+	manager, _ := deterministicManager(t)
+	issued := createCredential(t, manager, credentialClock.Add(time.Hour))
+	usedAt := credentialClock.Add(10 * time.Minute)
+	identity, err := manager.Authenticate(context.Background(), "Bearer "+issued.Credential, usedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Identity{TenantID: "tenant-a", Principal: issued.Metadata.Principal}
+	if identity != want {
+		t.Fatalf("identity = %#v, want %#v", identity, want)
+	}
+	metadata, err := manager.Get(context.Background(), "tenant-a", issued.Metadata.ID)
+	if err != nil || metadata.LastUsedAt == nil || !metadata.LastUsedAt.Equal(usedAt) {
+		t.Fatalf("last use = %v, error=%v", metadata.LastUsedAt, err)
+	}
+	if fields := []any{identity.TenantID, identity.Principal}; len(fields) != 2 {
+		t.Fatal("identity unexpectedly carried authorization")
+	}
+	t.Logf("valid credential resolved to kind=%s packet=%s and last_used_at=%s", identity.Principal.Kind, identity.Principal.PacketID, metadata.LastUsedAt.Format(time.RFC3339))
+}
+
+func TestCredentialRefusalsAreDistinctAndRevocationIsImmediate(t *testing.T) {
+	manager, _ := deterministicManager(t)
+	issued := createCredential(t, manager, credentialClock.Add(30*time.Minute))
+
+	cases := []struct {
+		name   string
+		header string
+		at     time.Time
+		want   error
+	}{
+		{name: "malformed header", header: issued.Credential, at: credentialClock, want: ErrMalformedHeader},
+		{name: "unknown value", header: "Bearer " + mutateCredential(issued.Credential), at: credentialClock, want: ErrUnknownCredential},
+		{name: "expired", header: "Bearer " + issued.Credential, at: credentialClock.Add(30 * time.Minute), want: ErrExpiredCredential},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := manager.Authenticate(context.Background(), test.header, test.at); !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+		})
+	}
+
+	if _, err := manager.Authenticate(context.Background(), "Bearer "+issued.Credential, credentialClock.Add(time.Minute)); err != nil {
+		t.Fatalf("authenticate before revoke: %v", err)
+	}
+	metadata, err := manager.Revoke(context.Background(), "tenant-a", issued.Metadata.ID, "human-a", credentialClock.Add(2*time.Minute))
+	if err != nil || metadata.RevokedAt == nil {
+		t.Fatalf("revoke metadata=%#v error=%v", metadata, err)
+	}
+	if _, err := manager.Authenticate(context.Background(), "Bearer "+issued.Credential, credentialClock.Add(2*time.Minute)); !errors.Is(err, ErrRevokedCredential) {
+		t.Fatalf("next request after revoke error = %v, want ErrRevokedCredential", err)
+	}
+	t.Log("valid before revocation; the immediately following request was refused as revoked")
+}
+
+func TestCredentialCreationKeepsTheSessionPrincipalNarrow(t *testing.T) {
+	manager, _ := deterministicManager(t)
+	for name, command := range map[string]CreateCommand{
+		"other tenant omitted": {PacketID: "0004-E03-T04", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour)},
+		"invalid packet":       {TenantID: "tenant-a", PacketID: "packet-a", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour)},
+		"over one hour":        {TenantID: "tenant-a", PacketID: "0004-E03-T04", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour + time.Nanosecond)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := manager.Create(context.Background(), command, credentialClock); !errors.Is(err, ErrInvalidCredential) {
+				t.Fatalf("error = %v, want ErrInvalidCredential", err)
+			}
+		})
+	}
+}
+
+func deterministicManager(t *testing.T) (*Manager, *MemoryStore) {
+	t.Helper()
+	store := NewMemoryStore()
+	manager, err := NewManager(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	random := make([]byte, identifierBytes+credentialBytes)
+	for index := range random {
+		random[index] = byte(index + 1)
+	}
+	manager.random = bytes.NewReader(random)
+	return manager, store
+}
+
+func createCredential(t *testing.T, manager *Manager, expiresAt time.Time) Issued {
+	t.Helper()
+	issued, err := manager.Create(context.Background(), CreateCommand{
+		TenantID: "tenant-a", PacketID: "0004-E03-T04", AttemptID: "attempt-a",
+		CreatedBy: "human-a", ExpiresAt: expiresAt,
+	}, credentialClock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return issued
+}
+
+func mutateCredential(value string) string {
+	last := value[len(value)-1]
+	replacement := byte('A')
+	if last == replacement {
+		replacement = 'B'
+	}
+	return value[:len(value)-1] + string(replacement)
+}
