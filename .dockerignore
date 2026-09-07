@@ -19,6 +19,8 @@
 !packet/**
 !packetexport
 !packetexport/**
+!packetpublisher
+!packetpublisher/**
 !runtimeexport
 !runtimeexport/**
 !surface

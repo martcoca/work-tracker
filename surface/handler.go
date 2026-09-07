@@ -44,6 +44,7 @@ var allowedMutationRoutes = map[string]string{
 }
 
 var ErrSnapshotUnavailable = errors.New("verified export snapshot is unavailable")
+var ErrAuthoringUnavailable = errors.New("durable authoring store or publisher is unavailable")
 
 func BuiltRoutes() []Route { return append([]Route(nil), builtRoutes...) }
 
@@ -92,6 +93,7 @@ type Service struct {
 	snapshots SnapshotSource
 	verifier  identity.Verifier
 	authors   *authoring.Workspace
+	onIssue   func(context.Context)
 	now       func() time.Time
 }
 
@@ -133,6 +135,41 @@ func NewServiceFromSourceWithStore(snapshots SnapshotSource, verifier identity.V
 	return newServiceFromSource(snapshots, verifier, store)
 }
 
+// NewReadOnlyServiceFromSource is the cold-start degradation path. It retains the last
+// verified public export for readers but has no in-memory authoring fallback: every draft
+// or issue operation explicitly refuses until the durable store and publisher are usable.
+func NewReadOnlyServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier) (*Service, error) {
+	if snapshots == nil || snapshots.CurrentSnapshot() == nil || verifier == nil {
+		return nil, errors.New("snapshot and identity verifier are required")
+	}
+	if err := ValidateAuthoringRoutes(builtRoutes); err != nil {
+		return nil, err
+	}
+	return &Service{snapshots: snapshots, verifier: verifier, now: time.Now}, nil
+}
+
+// EnableIssuePublication attaches the synchronous publication attempt made after the
+// durable issue event commits. Configure it before serving requests.
+func (service *Service) EnableIssuePublication(publish func(context.Context)) error {
+	if service == nil || service.authors == nil || publish == nil {
+		return ErrAuthoringUnavailable
+	}
+	if service.onIssue != nil {
+		return errors.New("issue publication is already configured")
+	}
+	service.onIssue = publish
+	return nil
+}
+
+// AuthoredTracker exposes the durable projection only for construction of the app export
+// publisher. It is nil in the deliberate read-only degradation mode.
+func (service *Service) AuthoredTracker() *packet.Tracker {
+	if service == nil || service.authors == nil {
+		return nil
+	}
+	return service.authors.Tracker()
+}
+
 func newServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier, store packet.EventStore) (*Service, error) {
 	if snapshots == nil || snapshots.CurrentSnapshot() == nil || verifier == nil {
 		return nil, errors.New("snapshot and identity verifier are required")
@@ -163,6 +200,13 @@ func (service *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, route := range builtRoutes {
 		var handler http.HandlerFunc
+		if service.authors == nil && isAuthoringRoute(route.Name) {
+			handler = service.authenticated(http.StatusServiceUnavailable, func(identity.Principal, *http.Request) (any, error) {
+				return nil, ErrAuthoringUnavailable
+			})
+			mux.HandleFunc(route.Method+" "+route.Pattern, handler)
+			continue
+		}
 		switch route.Name {
 		case "health":
 			handler = func(response http.ResponseWriter, _ *http.Request) {
@@ -231,6 +275,15 @@ func (service *Service) Handler() http.Handler {
 	return securityHeaders(mux)
 }
 
+func isAuthoringRoute(name string) bool {
+	switch name {
+	case "draft", "authored-packet", "draft-create", "draft-update", "draft-issue", "supersession-draft-create":
+		return true
+	default:
+		return false
+	}
+}
+
 func exportsUnavailable(exports []HeldExportStatus) bool {
 	if len(exports) == 0 {
 		return true
@@ -282,6 +335,8 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 	switch {
 	case errors.Is(err, ErrSnapshotUnavailable):
 		writeAPIError(response, http.StatusServiceUnavailable, "exports_unavailable", "No verified export snapshot is available.", status)
+	case errors.Is(err, ErrAuthoringUnavailable):
+		writeAPIError(response, http.StatusServiceUnavailable, "store_unavailable", "Durable authoring is temporarily unavailable; the last verified export remains readable.", status)
 	case errors.Is(err, ErrDirectoryStale):
 		writeAPIError(response, http.StatusServiceUnavailable, "directory_stale", "The tenant directory is stale; no tenant data is being shown.", status)
 	case errors.Is(err, ErrPacketExportStale), errors.Is(err, contract.ErrStaleExport):

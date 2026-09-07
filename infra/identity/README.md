@@ -27,9 +27,17 @@ to change Identity Platform.
 The packet event log uses the `(default)` Firestore Native database in Standard edition,
 located with Cloud Run. It has no provisioned capacity or warm replica. Paid point-in-time
 recovery is disabled, database deletion protection is enabled, and the OpenTofu deletion
-policy abandons rather than deletes it. The runtime receives only `roles/datastore.user`,
+policy abandons rather than deletes it. The runtime receives `roles/datastore.user`,
 conditioned on the exact default database resource. It receives no database administration,
-backup, import/export, IAM-management, or project-wide deployment role.
+backup, import/export, or IAM-management role.
+
+The runtime also publishes the reconciled packet export by cloning the current Firebase
+Hosting version, replacing only `packets.json`, and releasing the clone. Firebase Hosting
+does not support custom roles or a file/site-scoped writer, so `roles/firebasehosting.admin`
+in this dedicated tracker project is the narrowest supported publication grant. The runtime
+uses its attached service-account identity and short-lived metadata token; no service-account
+key or other long-lived credential is configured. Its publisher implements no site create,
+update, disable, or delete call.
 
 Firestore Standard provides one free database per project with 1 GiB storage, 50,000
 document reads/day, 20,000 writes/day, 20,000 deletes/day, and 10 GiB outbound transfer per

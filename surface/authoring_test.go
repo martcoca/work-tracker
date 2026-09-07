@@ -2,6 +2,7 @@ package surface
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,10 @@ import (
 
 func TestHumanComposesEditsIssuesAndSupersedesEntirelyInApp(t *testing.T) {
 	service := testService(t, testSnapshot(t, surfaceClock.Add(-30*time.Minute)), surfaceClock)
+	publications := 0
+	if err := service.EnableIssuePublication(func(context.Context) { publications++ }); err != nil {
+		t.Fatal(err)
+	}
 
 	created := writeAuthoring(t, service, http.MethodPost, "/api/initiatives/0004/epics/E02/drafts", "human-a", authoringBody("0004-E02-T90", "first"))
 	if created.Code != http.StatusCreated {
@@ -36,6 +41,9 @@ func TestHumanComposesEditsIssuesAndSupersedesEntirelyInApp(t *testing.T) {
 	issued := decodeBody[issuedResponse](t, issuedHTTP)
 	if issued.Packet.Goal != "Goal final" || issued.Packet.History[0].Actor != "human-a" || issued.Draft.State != "issued" {
 		t.Fatalf("issued = %+v", issued)
+	}
+	if publications != 1 {
+		t.Fatalf("issue publication attempts = %d, want 1", publications)
 	}
 	t.Logf("1. issued packet %s goal=%q author=%q state=%q", issued.Packet.ID, issued.Packet.Goal, issued.Packet.History[0].Actor, issued.Draft.State)
 
@@ -74,6 +82,9 @@ func TestHumanComposesEditsIssuesAndSupersedesEntirelyInApp(t *testing.T) {
 		t.Fatalf("issue replacement = %d %s", supersededHTTP.Code, supersededHTTP.Body.String())
 	}
 	superseded := decodeBody[issuedResponse](t, supersededHTTP)
+	if publications != 2 {
+		t.Fatalf("supersession publication attempts = %d, want 2", publications)
+	}
 	if superseded.Parent == nil || superseded.Parent.Goal != "Goal final" || superseded.Parent.SupersededBy == nil || *superseded.Parent.SupersededBy != superseded.Packet.ID {
 		t.Fatalf("parent = %+v replacement=%+v", superseded.Parent, superseded.Packet)
 	}

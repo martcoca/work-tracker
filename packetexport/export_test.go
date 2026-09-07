@@ -133,11 +133,11 @@ func TestBuildSerializesCompletePacketsInStableOrder(t *testing.T) {
 func TestPacketDigestIgnoresRecordInsertionOrder(t *testing.T) {
 	recordA := deterministicRecord("packet-a", "event-a")
 	recordB := deterministicRecord("packet-b", "event-b")
-	forward, err := buildRecords([]Record{recordA, recordB}, exportPublication)
+	forward, err := BuildRecords([]Record{recordA, recordB}, exportPublication)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reverse, err := buildRecords([]Record{recordB, recordA}, exportPublication)
+	reverse, err := BuildRecords([]Record{recordB, recordA}, exportPublication)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestPacketDigestIgnoresRecordInsertionOrder(t *testing.T) {
 }
 
 func TestPacketVerifierDistinguishesTamperedStaleAndMissing(t *testing.T) {
-	envelope, err := buildRecords([]Record{deterministicRecord("packet-alpha", "event-alpha")}, exportPublication)
+	envelope, err := BuildRecords([]Record{deterministicRecord("packet-alpha", "event-alpha")}, exportPublication)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestPublishWritesOnlyLocallyWithResolvedGitProvenance(t *testing.T) {
 }
 
 func TestExportContractDemonstration(t *testing.T) {
-	first, err := buildRecords([]Record{
+	first, err := BuildRecords([]Record{
 		deterministicRecord("packet-z", "event-z"),
 		deterministicRecord("packet-a", "event-a"),
 	}, exportPublication)
@@ -230,7 +230,7 @@ func TestExportContractDemonstration(t *testing.T) {
 	expiresAt, _ := time.Parse(time.RFC3339, first.ExpiresAt)
 	t.Logf("2. expires_at - published_at = %s", expiresAt.Sub(publishedAt))
 
-	second, err := buildRecords([]Record{
+	second, err := BuildRecords([]Record{
 		deterministicRecord("packet-a", "event-a"),
 		deterministicRecord("packet-z", "event-z"),
 	}, exportPublication)
@@ -271,6 +271,33 @@ func TestExportContractDemonstration(t *testing.T) {
 	})
 	t.Logf("6. unknown tenant refused=%v message=%v", errors.Is(unknownErr, tenant.ErrUnknownTenant), unknownErr)
 	t.Logf("   retired tenant refused differently=%v message=%v", errors.Is(retiredErr, tenant.ErrRetiredTenant), retiredErr)
+}
+
+func TestReconcileKeepsRepositoryOnlyAndLetsAppWinDuplicate(t *testing.T) {
+	repositoryOnly := deterministicRecord("packet-repository", "event-repository")
+	repositoryDuplicate := deterministicRecord("packet-shared", "event-old")
+	appDuplicate := deterministicRecord("packet-shared", "event-new")
+	appDuplicate.Goal = "durable app projection"
+	appOnly := deterministicRecord("packet-app", "event-app")
+
+	reconciled := Reconcile(
+		[]Record{repositoryDuplicate, repositoryOnly},
+		[]Record{appOnly, appDuplicate},
+	)
+	envelope, err := BuildRecords(reconciled, exportPublication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []Record
+	if err := json.Unmarshal(envelope.Payload, &records); err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{records[0].ID, records[1].ID, records[2].ID}; !reflect.DeepEqual(got, []string{"packet-app", "packet-repository", "packet-shared"}) {
+		t.Fatalf("ids = %v", got)
+	}
+	if records[2].Goal != "durable app projection" || records[2].History[0].EventID != "event-new" {
+		t.Fatalf("duplicate did not use app projection: %+v", records[2])
+	}
 }
 
 func deterministicRecord(id, eventID string) Record {

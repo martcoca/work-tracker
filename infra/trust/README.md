@@ -18,7 +18,8 @@ inputs. After reviewing a saved plan, the Founder applies it. That apply grants 
 
 - Cloud Run Developer on `tracker-reader` only;
 - Artifact Registry Reader on the one image repository;
-- Service Account User on the zero-permission runtime identity only;
+- Service Account User on the runtime identity only; that identity's own data and export
+  publication grants are declared in the Founder-applied foundation root;
 - Storage Object Admin on the existing versioned state bucket, conditioned so object
   reads/writes cover only `objects/work-tracker/delivery/**`. Foundation state holds the
   Identity Platform OAuth secret and remains unreadable. Cloud Storage evaluates object

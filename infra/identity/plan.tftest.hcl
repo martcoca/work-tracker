@@ -51,6 +51,14 @@ run "clean_read_only_plan" {
   }
 
   assert {
+    condition = (
+      google_project_iam_member.runtime_hosting.role == "roles/firebasehosting.admin" &&
+      google_project_iam_member.runtime_hosting.member == "serviceAccount:reader-synthetic@project-synthetic.iam.gserviceaccount.com"
+    )
+    error_message = "The runtime must receive only Firebase's supported Hosting publication role."
+  }
+
+  assert {
     condition     = output.identity_callback_url == "https://tracker.martcoca.com/__/auth/handler"
     error_message = "The callback URL must use the settled hostname."
   }

@@ -15,6 +15,7 @@ COPY identity ./identity
 COPY internal/containerfixture ./internal/containerfixture
 COPY packet ./packet
 COPY packetexport ./packetexport
+COPY packetpublisher ./packetpublisher
 COPY runtimeexport ./runtimeexport
 COPY surface ./surface
 COPY tenant ./tenant

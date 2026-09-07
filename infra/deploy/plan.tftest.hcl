@@ -36,13 +36,16 @@ run "immutable_zero_idle_revision" {
     condition = tomap({
       for item in google_cloud_run_v2_service.reader.template[0].containers[0].env : item.name => item.value
       }) == tomap({
-      FIREBASE_PROJECT_ID     = "project-synthetic"
-      FIRESTORE_DATABASE_ID   = "(default)"
-      PACKET_EXPORT_URL       = "https://tracker.martcoca.com/packets.json"
-      TENANT_DIRECTORY_URL    = "https://identity.martcoca.com/tenant-directory.json"
-      AGENT_GRANTS_URL        = "https://identity.martcoca.com/agent-grants.json"
-      EXPORT_REFRESH_INTERVAL = "5m"
-      EXPORT_FETCH_TIMEOUT    = "5s"
+      FIREBASE_PROJECT_ID          = "project-synthetic"
+      FIRESTORE_DATABASE_ID        = "(default)"
+      PACKET_EXPORT_URL            = "https://tracker.martcoca.com/packets.json"
+      REPOSITORY_PACKET_EXPORT_URL = "https://tracker.martcoca.com/repository-packets.json"
+      TENANT_DIRECTORY_URL         = "https://identity.martcoca.com/tenant-directory.json"
+      AGENT_GRANTS_URL             = "https://identity.martcoca.com/agent-grants.json"
+      EXPORT_REFRESH_INTERVAL      = "5m"
+      EXPORT_FETCH_TIMEOUT         = "5s"
+      HOSTING_SITE_ID              = "hosting-synthetic"
+      SOURCE_COMMIT                = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     })
     error_message = "The revision must use public runtime exports and bounded refresh timing."
   }

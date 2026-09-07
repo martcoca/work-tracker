@@ -22,8 +22,9 @@ var allowedTypes = map[string]bool{
 	"google_cloud_run_v2_service":                           true,
 	"google_cloud_run_v2_service_iam_member":                true,
 	// Firestore Standard has no provisioned capacity or warm replica and bills only stored
-	// data and operations, both with a documented free tier. Its conditioned IAM member is
-	// additive and is checked below for the one data-plane role and one exact database.
+	// data and operations, both with a documented free tier. IAM is checked below for the
+	// exact database data role and Firebase's narrowest Hosting writer; Hosting offers no
+	// custom-role or site-scoped alternative.
 	"google_firestore_database": true,
 	"google_project_iam_member": true,
 }
@@ -99,7 +100,7 @@ func run(input io.Reader, output io.Writer) error {
 			if err != nil {
 				return err
 			}
-			if err := validateFirestoreMember(planned, runtimeMember); err != nil {
+			if err := validateRuntimeMember(planned, runtimeMember); err != nil {
 				return err
 			}
 		}
@@ -149,7 +150,20 @@ func validateFirestoreDatabase(planned resource) error {
 	return nil
 }
 
-func validateFirestoreMember(planned resource, runtimeMember string) error {
+func validateRuntimeMember(planned resource, runtimeMember string) error {
+	if strings.HasSuffix(planned.Address, ".runtime_hosting") {
+		if planned.Values["role"] != "roles/firebasehosting.admin" || planned.Values["member"] != runtimeMember {
+			return fmt.Errorf("%s is not the runtime's Firebase Hosting publication role", planned.Address)
+		}
+		conditions, _ := planned.Values["condition"].([]any)
+		if len(conditions) != 0 {
+			return fmt.Errorf("%s has an unsupported condition", planned.Address)
+		}
+		return nil
+	}
+	if !strings.HasSuffix(planned.Address, ".runtime_firestore") {
+		return fmt.Errorf("%s is not an allowlisted runtime IAM member", planned.Address)
+	}
 	if planned.Values["role"] != "roles/datastore.user" || planned.Values["member"] != runtimeMember {
 		return fmt.Errorf("%s grants authority beyond the runtime Firestore data role", planned.Address)
 	}

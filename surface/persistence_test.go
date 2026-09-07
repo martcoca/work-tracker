@@ -1,8 +1,12 @@
 package surface
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +26,39 @@ func TestDurableServiceRefusesMissingAuthorityBeforeReadingStore(t *testing.T) {
 	}
 	if store.loadCalled {
 		t.Fatal("event store was read before authority was available")
+	}
+}
+
+func TestStoreOutageStartsReadOnlyFromLastVerifiedExportAndRefusesAuthoring(t *testing.T) {
+	snapshot := testSnapshot(t, surfaceClock.Add(-30*time.Minute))
+	source := staticSnapshotSource{snapshot: snapshot}
+	verifier := verifierFunc(func(_ context.Context, token string) (identity.Principal, error) {
+		return identity.Principal{Subject: token, TenantID: "tenant-a"}, nil
+	})
+	failedStore := &recordingEventStore{}
+	if _, err := NewServiceFromSourceWithStore(source, verifier, failedStore); err == nil {
+		t.Fatal("unreachable store unexpectedly enabled durable authoring")
+	}
+	service, err := NewReadOnlyServiceFromSource(source, verifier)
+	if err != nil {
+		t.Fatalf("start read-only service: %v", err)
+	}
+
+	read := httptest.NewRequest(http.MethodGet, "/api/initiatives", nil)
+	read.Header.Set("Authorization", "Bearer human-a")
+	readResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(readResponse, read)
+	if readResponse.Code != http.StatusOK || !strings.Contains(readResponse.Body.String(), `"0004"`) {
+		t.Fatalf("last good export read = %d %s", readResponse.Code, readResponse.Body.String())
+	}
+
+	write := httptest.NewRequest(http.MethodPost, "/api/initiatives/0004/epics/E02/drafts", bytes.NewBufferString(`{}`))
+	write.Header.Set("Authorization", "Bearer human-a")
+	write.Header.Set("Content-Type", "application/json")
+	writeResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(writeResponse, write)
+	if writeResponse.Code != http.StatusServiceUnavailable || !strings.Contains(writeResponse.Body.String(), `"code":"store_unavailable"`) {
+		t.Fatalf("authoring refusal = %d %s", writeResponse.Code, writeResponse.Body.String())
 	}
 }
 
