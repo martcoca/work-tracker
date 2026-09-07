@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -67,7 +68,7 @@ type Metadata struct {
 // value, never the bearer value itself.
 type StoredRecord struct {
 	Metadata Metadata
-	Hash     [sha256.Size]byte
+	Hash     [sha256.Size]byte `json:"-"`
 }
 
 // Issued is returned only by Create. Subsequent calls return Metadata.
@@ -133,6 +134,9 @@ func (manager *Manager) Create(ctx context.Context, command CreateCommand, at ti
 		},
 		CreatedBy: command.CreatedBy, CreatedAt: at,
 	}, Hash: hash}
+	if err := ValidateStoredRecord(record); err != nil {
+		return Issued{}, err
+	}
 	if err := manager.store.Create(ctx, record); err != nil {
 		return Issued{}, err
 	}
@@ -212,6 +216,47 @@ func validateCreate(command CreateCommand, at time.Time) error {
 	default:
 		return nil
 	}
+}
+
+// ValidateStoredRecord keeps every durable adapter fail-closed on the same session shape
+// the manager issues.
+func ValidateStoredRecord(record StoredRecord) error {
+	metadata := record.Metadata
+	if !identifierPattern.MatchString(metadata.ID) || !validIdentityValue(metadata.TenantID) ||
+		metadata.Principal.Kind != "session" || !packetIDPattern.MatchString(metadata.Principal.PacketID) ||
+		!validIdentityValue(metadata.Principal.AttemptID) || len(metadata.Principal.AttemptID) > 256 ||
+		!validIdentityValue(metadata.CreatedBy) || metadata.CreatedAt.IsZero() ||
+		!metadata.CreatedAt.Equal(metadata.Principal.IssuedAt) ||
+		!metadata.Principal.ExpiresAt.After(metadata.Principal.IssuedAt) ||
+		metadata.Principal.ExpiresAt.Sub(metadata.Principal.IssuedAt) > MaximumLifetime {
+		return fmt.Errorf("%w: stored credential metadata is invalid", ErrInvalidCredential)
+	}
+	if metadata.RevokedAt == nil && metadata.RevokedBy != "" || metadata.RevokedAt != nil && !validIdentityValue(metadata.RevokedBy) {
+		return fmt.Errorf("%w: stored revocation metadata is invalid", ErrInvalidCredential)
+	}
+	if metadata.RevokedAt != nil && metadata.RevokedAt.Before(metadata.CreatedAt) {
+		return fmt.Errorf("%w: revocation predates creation", ErrInvalidCredential)
+	}
+	if metadata.LastUsedAt != nil && metadata.LastUsedAt.Before(metadata.CreatedAt) {
+		return fmt.Errorf("%w: last use predates creation", ErrInvalidCredential)
+	}
+	return nil
+}
+
+// ValidateAuthentication is shared by every store adapter and must run inside the store's
+// read/update transaction. Wrong digests are deliberately indistinguishable from unknown
+// identifiers.
+func ValidateAuthentication(record StoredRecord, hash [sha256.Size]byte, at time.Time) error {
+	if subtle.ConstantTimeCompare(record.Hash[:], hash[:]) != 1 {
+		return ErrUnknownCredential
+	}
+	if record.Metadata.RevokedAt != nil {
+		return ErrRevokedCredential
+	}
+	if !at.Before(record.Metadata.Principal.ExpiresAt) {
+		return ErrExpiredCredential
+	}
+	return nil
 }
 
 func validIdentityValue(value string) bool {

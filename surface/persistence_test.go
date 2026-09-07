@@ -60,6 +60,14 @@ func TestStoreOutageStartsReadOnlyFromLastVerifiedExportAndRefusesAuthoring(t *t
 	if writeResponse.Code != http.StatusServiceUnavailable || !strings.Contains(writeResponse.Body.String(), `"code":"store_unavailable"`) {
 		t.Fatalf("authoring refusal = %d %s", writeResponse.Code, writeResponse.Body.String())
 	}
+
+	credentials := httptest.NewRequest(http.MethodGet, "/api/agent-credentials", nil)
+	credentials.Header.Set("Authorization", "Bearer human-a")
+	credentialResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(credentialResponse, credentials)
+	if credentialResponse.Code != http.StatusServiceUnavailable || !strings.Contains(credentialResponse.Body.String(), `"code":"credential_store_unavailable"`) {
+		t.Fatalf("credential-store refusal = %d %s", credentialResponse.Code, credentialResponse.Body.String())
+	}
 }
 
 type unavailableSnapshotSource struct{}

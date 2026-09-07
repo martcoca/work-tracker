@@ -4,7 +4,6 @@ package credentialstore
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -92,6 +91,9 @@ func NewFirestore(ctx context.Context, config Config) (*Firestore, error) {
 func (store *Firestore) Close() error { return store.client.Close() }
 
 func (store *Firestore) Create(ctx context.Context, record agentcredential.StoredRecord) error {
+	if err := agentcredential.ValidateStoredRecord(record); err != nil {
+		return err
+	}
 	document := encodeDocument(record)
 	ctx, cancel := context.WithTimeout(ctx, store.timeout)
 	defer cancel()
@@ -165,14 +167,8 @@ func (store *Firestore) Authenticate(ctx context.Context, identifier string, has
 		if err != nil {
 			return err
 		}
-		if subtle.ConstantTimeCompare(record.Hash[:], hash[:]) != 1 {
-			return agentcredential.ErrUnknownCredential
-		}
-		if record.Metadata.RevokedAt != nil {
-			return agentcredential.ErrRevokedCredential
-		}
-		if !at.Before(record.Metadata.Principal.ExpiresAt) {
-			return agentcredential.ErrExpiredCredential
+		if err := agentcredential.ValidateAuthentication(record, hash, at); err != nil {
+			return err
 		}
 		used := at.UTC()
 		if record.Metadata.LastUsedAt == nil || used.After(*record.Metadata.LastUsedAt) {
@@ -265,7 +261,7 @@ func decodeDocument(document credentialDocument) (agentcredential.StoredRecord, 
 	}
 	var hash [sha256.Size]byte
 	copy(hash[:], document.CredentialHash)
-	return agentcredential.StoredRecord{Metadata: agentcredential.Metadata{
+	record := agentcredential.StoredRecord{Metadata: agentcredential.Metadata{
 		ID: document.ID, TenantID: document.TenantID,
 		Principal: agentcredential.Principal{
 			Kind: "session", PacketID: document.PacketID, AttemptID: document.AttemptID,
@@ -274,7 +270,11 @@ func decodeDocument(document credentialDocument) (agentcredential.StoredRecord, 
 		CreatedBy: document.CreatedBy, CreatedAt: document.CreatedAt.UTC(),
 		RevokedBy: document.RevokedBy, RevokedAt: cloneTime(document.RevokedAt),
 		LastUsedAt: cloneTime(document.LastUsedAt),
-	}, Hash: hash}, nil
+	}, Hash: hash}
+	if err := agentcredential.ValidateStoredRecord(record); err != nil {
+		return agentcredential.StoredRecord{}, fmt.Errorf("stored credential failed validation: %w", err)
+	}
+	return record, nil
 }
 
 func pathID(value string) string {

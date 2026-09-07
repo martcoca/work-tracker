@@ -42,11 +42,12 @@ func TestCredentialDocumentStoresDigestAndMetadataWithoutBearerValue(t *testing.
 }
 
 func TestCredentialDocumentsFailClosed(t *testing.T) {
+	issuedAt := time.Now().UTC()
 	valid := credentialDocument{
-		SchemaVersion: documentSchema, ID: "id", TenantID: "tenant-a",
+		SchemaVersion: documentSchema, ID: "00112233445566778899aabbccddeeff", TenantID: "tenant-a",
 		PacketID: "0004-E03-T04", AttemptID: "attempt-a",
-		IssuedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
-		CreatedBy: "human-a", CreatedAt: time.Now().UTC(), CredentialHash: make([]byte, sha256.Size),
+		IssuedAt: issuedAt, ExpiresAt: issuedAt.Add(time.Hour),
+		CreatedBy: "human-a", CreatedAt: issuedAt, CredentialHash: make([]byte, sha256.Size),
 	}
 	for name, document := range map[string]credentialDocument{
 		"schema":       func() credentialDocument { value := valid; value.SchemaVersion++; return value }(),
@@ -54,6 +55,11 @@ func TestCredentialDocumentsFailClosed(t *testing.T) {
 		"partial revoke": func() credentialDocument {
 			value := valid
 			value.RevokedBy = "human-a"
+			return value
+		}(),
+		"overlong principal": func() credentialDocument {
+			value := valid
+			value.ExpiresAt = value.IssuedAt.Add(agentcredential.MaximumLifetime + time.Nanosecond)
 			return value
 		}(),
 	} {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/martcoca/work-tracker/agentcredential"
+	"github.com/martcoca/work-tracker/contract"
 )
 
 func TestSignedInHumanCreatesCredentialOnceAndRetrievesOnlyMetadata(t *testing.T) {
@@ -54,7 +55,7 @@ func TestMachineAuthenticationCarriesIdentityRecordsUseAndGrantsNothing(t *testi
 	var authenticated agentcredential.Identity
 	handler := service.agentAuthenticated(http.StatusOK, func(identity agentcredential.Identity, _ *http.Request) (any, error) {
 		authenticated = identity
-		return nil, ErrAgentGrantRequired
+		return nil, emptyPublishedGrantRefusal(t, identity)
 	})
 	request := httptest.NewRequest(http.MethodPost, "/synthetic-grant-protected-operation", nil)
 	request.Header.Set("Authorization", "Bearer "+issued.Credential)
@@ -72,7 +73,7 @@ func TestMachineAuthenticationCarriesIdentityRecordsUseAndGrantsNothing(t *testi
 	if metadata.LastUsedAt == nil || !metadata.LastUsedAt.Equal(surfaceClock) {
 		t.Fatalf("last used = %v", metadata.LastUsedAt)
 	}
-	t.Logf("authenticated as packet=%s attempt=%s; empty published-grant decision refused with HTTP %d; last use recorded",
+	t.Logf("authenticated as packet=%s attempt=%s; verified empty agent-grants export refused with HTTP %d; last use recorded",
 		authenticated.Principal.PacketID, authenticated.Principal.AttemptID, response.Code)
 }
 
@@ -107,20 +108,23 @@ func TestMachineCredentialRefusalsAreDistinctAndRevocationIsImmediate(t *testing
 
 func TestCredentialRequestRequiresOwnedPacketAndAtMostOneHour(t *testing.T) {
 	service := testService(t, testSnapshot(t, surfaceClock.Add(-30*time.Minute)), surfaceClock)
-	for name, body := range map[string]map[string]any{
-		"other tenant packet": {
+	for name, test := range map[string]struct {
+		body map[string]any
+		want int
+	}{
+		"other tenant packet": {body: map[string]any{
 			"packet_id": "0005-E01-T01", "attempt_id": "attempt-a",
 			"expires_at": surfaceClock.Add(time.Hour).Format(time.RFC3339),
-		},
-		"overlong": {
+		}, want: http.StatusNotFound},
+		"overlong": {body: map[string]any{
 			"packet_id": "0004-E02-T01", "attempt_id": "attempt-a",
 			"expires_at": surfaceClock.Add(time.Hour + time.Second).Format(time.RFC3339),
-		},
+		}, want: http.StatusUnprocessableEntity},
 	} {
 		t.Run(name, func(t *testing.T) {
-			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", body)
-			if response.Code != http.StatusNotFound && response.Code != http.StatusUnprocessableEntity {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", test.body)
+			if response.Code != test.want {
+				t.Fatalf("response = %d %s, want %d", response.Code, response.Body.String(), test.want)
 			}
 		})
 	}
@@ -176,4 +180,36 @@ func mutateAgentCredential(value string) string {
 		replacement = 'B'
 	}
 	return value[:len(value)-1] + string(replacement)
+}
+
+func emptyPublishedGrantRefusal(t *testing.T, identity agentcredential.Identity) error {
+	t.Helper()
+	publication := contract.Publication{
+		PublishedAt: surfaceClock.Add(-time.Minute),
+		Source: contract.Source{
+			Repository: "synthetic/identity-and-tenancy",
+			Commit:     strings.Repeat("a", 40),
+		},
+	}
+	const agentGrantsSchema = "martcoca.identity.agent-grants/1"
+	envelope, err := contract.Build(agentGrantsSchema, []any{}, publication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := contract.Serialize(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := contract.Verify(contents, agentGrantsSchema, surfaceClock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var grants []json.RawMessage
+	if err := json.Unmarshal(verified.Payload, &grants); err != nil {
+		t.Fatal(err)
+	}
+	if len(grants) != 0 || identity.Principal.Kind != "session" {
+		t.Fatal("synthetic published export was not the intended no-grant case")
+	}
+	return ErrAgentGrantRequired
 }

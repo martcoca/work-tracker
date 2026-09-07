@@ -3,7 +3,6 @@ package agentcredential
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	"sort"
 	"sync"
 	"time"
@@ -23,6 +22,9 @@ func NewMemoryStore() *MemoryStore {
 func (store *MemoryStore) Create(_ context.Context, record StoredRecord) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if err := ValidateStoredRecord(record); err != nil {
+		return err
+	}
 	if _, exists := store.records[record.Metadata.ID]; exists {
 		return ErrCredentialExists
 	}
@@ -62,14 +64,11 @@ func (store *MemoryStore) Authenticate(_ context.Context, identifier string, has
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	record, exists := store.records[identifier]
-	if !exists || subtle.ConstantTimeCompare(record.Hash[:], hash[:]) != 1 {
+	if !exists {
 		return StoredRecord{}, ErrUnknownCredential
 	}
-	if record.Metadata.RevokedAt != nil {
-		return StoredRecord{}, ErrRevokedCredential
-	}
-	if !at.Before(record.Metadata.Principal.ExpiresAt) {
-		return StoredRecord{}, ErrExpiredCredential
+	if err := ValidateAuthentication(record, hash, at); err != nil {
+		return StoredRecord{}, err
 	}
 	used := at.UTC()
 	if record.Metadata.LastUsedAt == nil || used.After(*record.Metadata.LastUsedAt) {

@@ -33,3 +33,16 @@ unavailable degrades reporting; it does not halt the organization.
 Identity comes from the Identity and Tenancy product, consumed as **files**: agent grants say
 whether a session may act, and the tenant directory says whose work a packet is. This product
 never calls that one either, and serves from its last exports when it is unavailable.
+
+## Agent credentials
+
+A signed-in human creates a packet-bound machine credential with
+`POST /api/agent-credentials`, then receives its bearer value once. Later list and detail
+responses expose only identity metadata: tenant, packet, attempt, issue/expiry, creator,
+revocation, and last use. `POST /api/agent-credentials/{credential}/revoke` takes effect on
+the next authentication transaction.
+
+The bearer value is presented as `Authorization: Bearer <one-time value>`. The service stores
+only its SHA-256 digest in the existing Firestore database. A successful match puts the
+session principal and tenant on the request; it contributes no scope. Every comment or
+status operation must still find its named permission in 0000's current agent-grants export.
