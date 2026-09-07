@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/martcoca/work-tracker/contract"
+	"github.com/martcoca/work-tracker/credentialstore"
 	"github.com/martcoca/work-tracker/eventstore"
 	"github.com/martcoca/work-tracker/identity"
 	"github.com/martcoca/work-tracker/packetpublisher"
@@ -51,19 +52,31 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	store, storeErr := eventstore.NewFirestore(context.Background(), eventstore.Config{
+	databaseID := valueOrDefault("FIRESTORE_DATABASE_ID", eventstore.DefaultDatabaseID)
+	packetStore, storeErr := eventstore.NewFirestore(context.Background(), eventstore.Config{
 		ProjectID:  projectID,
-		DatabaseID: valueOrDefault("FIRESTORE_DATABASE_ID", eventstore.DefaultDatabaseID),
+		DatabaseID: databaseID,
 	})
+	var credentialStore *credentialstore.Firestore
+	if storeErr == nil {
+		credentialStore, storeErr = credentialstore.NewFirestore(context.Background(), credentialstore.Config{
+			ProjectID: projectID, DatabaseID: databaseID,
+		})
+	}
 	var service *surface.Service
 	if storeErr == nil {
-		defer store.Close()
-		service, storeErr = surface.NewServiceFromSourceWithStore(exports, verifier, store)
+		service, storeErr = surface.NewServiceFromSourceWithStores(exports, verifier, packetStore, credentialStore)
 	}
 	if storeErr == nil {
 		storeErr = enableAppPublication(context.Background(), service, exports, config.FetchTimeout)
 	}
 	if storeErr != nil {
+		if credentialStore != nil {
+			_ = credentialStore.Close()
+		}
+		if packetStore != nil {
+			_ = packetStore.Close()
+		}
 		// The public export is a separate durable copy. A Firestore or publisher outage
 		// therefore degrades the process to reads from that last verified copy; it must
 		// never enable the in-memory authoring store used by local callers and tests.
@@ -72,6 +85,9 @@ func run() error {
 		if err != nil {
 			return err
 		}
+	} else {
+		defer packetStore.Close()
+		defer credentialStore.Close()
 	}
 	server := &http.Server{
 		Addr:              ":" + valueOrDefault("PORT", "8080"),

@@ -158,8 +158,12 @@ func TestBuiltRouteListAllowsOnlyDraftLifecycleMutations(t *testing.T) {
 		"GET /api/initiatives/{initiative}",
 		"GET /api/initiatives/{initiative}/epics/{epic}",
 		"GET /api/initiatives/{initiative}/epics/{epic}/packets/{packet}",
+		"GET /api/agent-credentials",
+		"GET /api/agent-credentials/{credential}",
 		"GET /api/drafts/{draft}",
 		"GET /api/authored/packets/{packet}",
+		"POST /api/agent-credentials",
+		"POST /api/agent-credentials/{credential}/revoke",
 		"POST /api/initiatives/{initiative}/epics/{epic}/drafts",
 		"PUT /api/drafts/{draft}",
 		"POST /api/drafts/{draft}/issue",
@@ -200,6 +204,7 @@ func testService(t *testing.T, snapshot *Snapshot, now time.Time) *Service {
 	t.Helper()
 	principals := map[string]identity.Principal{
 		"human-a":       {Subject: "human-a", TenantID: "tenant-a"},
+		"human-b":       {Subject: "human-b", TenantID: "tenant-b"},
 		"human-unknown": {Subject: "human-unknown", TenantID: "tenant-unknown"},
 		"human-retired": {Subject: "human-retired", TenantID: "tenant-retired"},
 	}
