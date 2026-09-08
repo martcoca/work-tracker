@@ -54,6 +54,13 @@ together; there is no independent Cloud Run traffic command that could leave an 
 frontend talking to a newer API. The workflow finishes by fetching that version's unique
 commit marker from `https://tracker.martcoca.com` over TLS.
 
+A pin that sits on the **latest ready** revision is reported differently: Cloud Run keeps
+it as a named revision target in the service spec but folds it into the latest-revision
+entry of `trafficStatuses`, which carries the tag and no revision at all. Rolling *forward*
+to the commit currently deployed is exactly that shape, so the policy resolves such a pin
+through the service's own `latestReadyRevision` and still requires the resolved revision's
+`source-commit` annotation to equal the requested commit.
+
 ### How far back a rollback reaches
 
 That mechanism depends entirely on the pin outliving the deploy that created it, and for a
