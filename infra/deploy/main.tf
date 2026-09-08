@@ -98,4 +98,16 @@ resource "google_cloud_run_v2_service" "reader" {
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
     percent = 100
   }
+
+  # Firebase Hosting's `pinTag` rewrite adds a zero-percent `fh-` traffic tag to the
+  # revision it pins, after this apply. Declaring traffic here and not ignoring it made
+  # every apply send `[{LATEST, 100}]` and silently drop that tag, so only the newest
+  # revision was ever tag-reachable and the only rollback the design permitted was a
+  # no-op. Traffic is LATEST, so routing follows the newest ready revision on its own and
+  # nothing here needs re-asserting; the pins are the one thing an apply must not erase.
+  # `scripts/deploy/prune-run-tags.mjs` re-asserts the allocation after every deploy and
+  # bounds how many pins survive, because this block no longer does.
+  lifecycle {
+    ignore_changes = [traffic]
+  }
 }

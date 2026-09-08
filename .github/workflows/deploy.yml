@@ -26,10 +26,17 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.15.0
+          package-manager-cache: false
+
       - name: Prove keyless, ordered, digest-preserving delivery
         run: |
           scripts/deploy/check-workflow.sh
           scripts/deploy/check-refusals.sh
+          node --test scripts/deploy/run-tags.test.mjs
 
   deploy:
     name: Deploy merged revision
@@ -272,3 +279,11 @@ jobs:
           done
           echo '::error::live Hosting version did not return the merge commit'
           exit 1
+
+      # The apply no longer manages traffic, so the allocation it used to re-assert is
+      # re-asserted here, and the Hosting pins it used to erase are bounded here.
+      - name: Re-assert live traffic and bound rollback pin retention
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: node scripts/deploy/prune-run-tags.mjs

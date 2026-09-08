@@ -3,6 +3,7 @@ set -euo pipefail
 
 WORKFLOW='.github/workflows/deploy.yml'
 TRUST='infra/trust/main.tf'
+DEPLOY_STACK='infra/deploy/main.tf'
 
 require_literal() {
   local expected="$1"
@@ -26,6 +27,14 @@ require_literal 'go run ./cmd/verify-runtime-exports'
 require_literal 'go run ./internal/deployguard'
 require_literal 'firebase deploy --only hosting'
 require_literal 'source-commit-$GITHUB_SHA.txt'
+require_literal 'node --test scripts/deploy/run-tags.test.mjs'
+
+# The apply stopped managing traffic so that it would stop erasing the Hosting pins a
+# rollback reaches through. That is only safe while something else re-asserts the
+# allocation and bounds the pins, so the two are required together: an apply that ignores
+# traffic without the retention step would leave nothing checking either.
+require_literal 'ignore_changes = [traffic]' "$DEPLOY_STACK"
+require_literal 'node scripts/deploy/prune-run-tags.mjs'
 
 require_literal 'var.repository_ref == "refs/heads/main"' 'infra/trust/variables.tf'
 require_literal 'roles/run.developer' "$TRUST"
@@ -54,11 +63,12 @@ APPLY_LINE="$(line_of 'tofu -chdir=infra/deploy apply')"
 HOSTING_COUNT="$(grep -Fc -- 'firebase deploy --only hosting' "$WORKFLOW")"
 PREFLIGHT_HOSTING_LINE="$(grep -nF -- 'firebase deploy --only hosting' "$WORKFLOW" | sed -n '1s/:.*//p')"
 FINAL_HOSTING_LINE="$(grep -nF -- 'firebase deploy --only hosting' "$WORKFLOW" | sed -n '2s/:.*//p')"
+RETENTION_LINE="$(line_of 'node scripts/deploy/prune-run-tags.mjs')"
 
 if [ -z "$BUILD_LINE" ] || [ -z "$SCAN_LINE" ] || [ -z "$PUSH_LINE" ] ||
    [ -z "$FRONTEND_LINE" ] || [ -z "$EXPORT_LINE" ] || [ -z "$VERIFY_LINE" ] ||
    [ -z "$GUARD_LINE" ] || [ -z "$APPLY_LINE" ] || [ "$HOSTING_COUNT" -ne 2 ] ||
-   [ -z "$PREFLIGHT_HOSTING_LINE" ] || [ -z "$FINAL_HOSTING_LINE" ]; then
+   [ -z "$PREFLIGHT_HOSTING_LINE" ] || [ -z "$FINAL_HOSTING_LINE" ] || [ -z "$RETENTION_LINE" ]; then
   echo 'error: ordered delivery steps could not be located' >&2
   exit 1
 fi
@@ -66,8 +76,9 @@ if ! [ "$BUILD_LINE" -lt "$SCAN_LINE" ] || ! [ "$SCAN_LINE" -lt "$PUSH_LINE" ] |
    ! [ "$PUSH_LINE" -lt "$FRONTEND_LINE" ] || ! [ "$FRONTEND_LINE" -lt "$EXPORT_LINE" ] ||
    ! [ "$EXPORT_LINE" -lt "$PREFLIGHT_HOSTING_LINE" ] || ! [ "$PREFLIGHT_HOSTING_LINE" -lt "$VERIFY_LINE" ] ||
    ! [ "$VERIFY_LINE" -lt "$GUARD_LINE" ] || ! [ "$GUARD_LINE" -lt "$APPLY_LINE" ] ||
-   ! [ "$APPLY_LINE" -lt "$FINAL_HOSTING_LINE" ]; then
-  echo 'error: delivery must build, scan, push, build the export, publish it, verify, guard, apply, then refresh Hosting' >&2
+   ! [ "$APPLY_LINE" -lt "$FINAL_HOSTING_LINE" ] ||
+   ! [ "$FINAL_HOSTING_LINE" -lt "$RETENTION_LINE" ]; then
+  echo 'error: delivery must build, scan, push, build the export, publish it, verify, guard, apply, refresh Hosting, then bound its pins' >&2
   exit 1
 fi
 
@@ -80,4 +91,4 @@ if grep -Fq 'docker/build-push-action' "$WORKFLOW"; then
   exit 1
 fi
 
-echo 'PASS: deploy is keyless, exact-main, ordered, guarded, and digest-preserving'
+echo 'PASS: deploy is keyless, exact-main, ordered, guarded, digest-preserving, and pin-bounded'
