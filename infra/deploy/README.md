@@ -53,3 +53,25 @@ Because the Hosting version contains the pinned Cloud Run tag, its frontend and 
 together; there is no independent Cloud Run traffic command that could leave an old
 frontend talking to a newer API. The workflow finishes by fetching that version's unique
 commit marker from `https://tracker.martcoca.com` over TLS.
+
+### How far back a rollback reaches
+
+That mechanism depends entirely on the pin outliving the deploy that created it, and for a
+long time it did not. `traffic` was declared in this stack and not ignored, so every apply
+sent `[{LATEST, 100}]` and dropped the `fh-` tag Firebase had added; seventeen retained
+revisions carried exactly one tag, on the revision already serving, and the only rollback
+the design permitted was a no-op. The apply now ignores `traffic` — routing is
+`LATEST`, so it follows the newest ready revision without being re-asserted — and the two
+jobs the apply was doing implicitly moved to `scripts/deploy/prune-run-tags.mjs`, which
+runs after the Hosting refresh:
+
+- it refuses any allocation other than one latest-revision target at 100% with
+  zero-percent named pins, which is the drift the apply used to correct; and
+- it keeps the newest `RETAINED_PIN_TAGS` pins and reclaims the rest.
+
+The bound is **ten**, and the Firebase CLI reuses the pin already on the latest ready
+revision rather than adding a second, so ten pins are ten deploys of rollback reach. A pin
+is a zero-percent traffic target on a revision that already exists and scales to zero, so
+it configures no compute and costs nothing; the bound is there because unbounded growth is
+a leak. Rolling back past it is refused rather than approximated — `selectPinnedRevision`
+finds no retained revision for the recorded tag and stops.
