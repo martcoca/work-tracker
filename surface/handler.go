@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/martcoca/work-tracker/agentcredential"
 	"github.com/martcoca/work-tracker/authoring"
 	"github.com/martcoca/work-tracker/contract"
 	"github.com/martcoca/work-tracker/identity"
@@ -28,8 +29,12 @@ var builtRoutes = []Route{
 	{Name: "initiative", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}"},
 	{Name: "epic", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}"},
 	{Name: "packet", Method: http.MethodGet, Pattern: "/api/initiatives/{initiative}/epics/{epic}/packets/{packet}"},
+	{Name: "agent-credential-list", Method: http.MethodGet, Pattern: "/api/agent-credentials"},
+	{Name: "agent-credential-detail", Method: http.MethodGet, Pattern: "/api/agent-credentials/{credential}"},
 	{Name: "draft", Method: http.MethodGet, Pattern: "/api/drafts/{draft}"},
 	{Name: "authored-packet", Method: http.MethodGet, Pattern: "/api/authored/packets/{packet}"},
+	{Name: "agent-credential-create", Method: http.MethodPost, Pattern: "/api/agent-credentials"},
+	{Name: "agent-credential-revoke", Method: http.MethodPost, Pattern: "/api/agent-credentials/{credential}/revoke"},
 	{Name: "draft-create", Method: http.MethodPost, Pattern: "/api/initiatives/{initiative}/epics/{epic}/drafts"},
 	{Name: "draft-update", Method: http.MethodPut, Pattern: "/api/drafts/{draft}"},
 	{Name: "draft-issue", Method: http.MethodPost, Pattern: "/api/drafts/{draft}/issue"},
@@ -37,6 +42,8 @@ var builtRoutes = []Route{
 }
 
 var allowedMutationRoutes = map[string]string{
+	http.MethodPost + " /api/agent-credentials":                                                    "agent-credential-create",
+	http.MethodPost + " /api/agent-credentials/{credential}/revoke":                                "agent-credential-revoke",
 	http.MethodPost + " /api/initiatives/{initiative}/epics/{epic}/drafts":                         "draft-create",
 	http.MethodPut + " /api/drafts/{draft}":                                                        "draft-update",
 	http.MethodPost + " /api/drafts/{draft}/issue":                                                 "draft-issue",
@@ -45,6 +52,8 @@ var allowedMutationRoutes = map[string]string{
 
 var ErrSnapshotUnavailable = errors.New("verified export snapshot is unavailable")
 var ErrAuthoringUnavailable = errors.New("durable authoring store or publisher is unavailable")
+var ErrCredentialStoreUnavailable = errors.New("durable credential store is unavailable")
+var ErrAgentGrantRequired = errors.New("authenticated agent has no matching grant")
 
 func BuiltRoutes() []Route { return append([]Route(nil), builtRoutes...) }
 
@@ -58,8 +67,9 @@ func ValidateReadOnly(routes []Route) error {
 	return nil
 }
 
-// ValidateAuthoringRoutes permits only the four named draft lifecycle mutations. The
-// exact allowlist makes adding an issued-packet body edit fail service construction.
+// ValidateAuthoringRoutes permits only the named human authoring and credential-lifecycle
+// mutations. The exact allowlist makes adding an issued-packet body edit or a machine
+// bootstrap route fail service construction.
 func ValidateAuthoringRoutes(routes []Route) error {
 	seenNames := make(map[string]struct{}, len(routes))
 	seenMutations := make(map[string]struct{}, len(allowedMutationRoutes))
@@ -74,7 +84,7 @@ func ValidateAuthoringRoutes(routes []Route) error {
 		key := route.Method + " " + route.Pattern
 		expectedName, allowed := allowedMutationRoutes[key]
 		if !allowed || expectedName != route.Name {
-			return fmt.Errorf("route %q is not an allowed draft lifecycle mutation: %s", route.Name, key)
+			return fmt.Errorf("route %q is not an allowed human mutation: %s", route.Name, key)
 		}
 		if _, duplicate := seenMutations[key]; duplicate {
 			return fmt.Errorf("duplicate mutation route %s", key)
@@ -90,11 +100,12 @@ func ValidateAuthoringRoutes(routes []Route) error {
 }
 
 type Service struct {
-	snapshots SnapshotSource
-	verifier  identity.Verifier
-	authors   *authoring.Workspace
-	onIssue   func(context.Context)
-	now       func() time.Time
+	snapshots   SnapshotSource
+	verifier    identity.Verifier
+	authors     *authoring.Workspace
+	credentials *agentcredential.Manager
+	onIssue     func(context.Context)
+	now         func() time.Time
 }
 
 // SnapshotSource supplies an already-verified immutable snapshot. Implementations may
@@ -122,7 +133,7 @@ func NewService(snapshot *Snapshot, verifier identity.Verifier) (*Service, error
 // NewServiceFromSource keeps outbound refresh work outside handlers while allowing every
 // request and issue-time tenant check to see the latest verified snapshot.
 func NewServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier) (*Service, error) {
-	return newServiceFromSource(snapshots, verifier, nil)
+	return newServiceFromSource(snapshots, verifier, nil, agentcredential.NewMemoryStore())
 }
 
 // NewServiceFromSourceWithStore uses a durable packet event log after authority exports
@@ -132,7 +143,16 @@ func NewServiceFromSourceWithStore(snapshots SnapshotSource, verifier identity.V
 	if store == nil {
 		return nil, errors.New("packet event store is required")
 	}
-	return newServiceFromSource(snapshots, verifier, store)
+	return newServiceFromSource(snapshots, verifier, store, agentcredential.NewMemoryStore())
+}
+
+// NewServiceFromSourceWithStores requires both durable stores in production. A missing
+// authority snapshot is rejected before either is read.
+func NewServiceFromSourceWithStores(snapshots SnapshotSource, verifier identity.Verifier, packetStore packet.EventStore, credentialStore agentcredential.Store) (*Service, error) {
+	if packetStore == nil || credentialStore == nil {
+		return nil, errors.New("packet event store and agent credential store are required")
+	}
+	return newServiceFromSource(snapshots, verifier, packetStore, credentialStore)
 }
 
 // NewReadOnlyServiceFromSource is the cold-start degradation path. It retains the last
@@ -170,7 +190,7 @@ func (service *Service) AuthoredTracker() *packet.Tracker {
 	return service.authors.Tracker()
 }
 
-func newServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier, store packet.EventStore) (*Service, error) {
+func newServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier, store packet.EventStore, credentialStore agentcredential.Store) (*Service, error) {
 	if snapshots == nil || snapshots.CurrentSnapshot() == nil || verifier == nil {
 		return nil, errors.New("snapshot and identity verifier are required")
 	}
@@ -193,16 +213,27 @@ func newServiceFromSource(snapshots SnapshotSource, verifier identity.Verifier, 
 	if err != nil {
 		return nil, err
 	}
-	return &Service{snapshots: snapshots, verifier: verifier, authors: authors, now: time.Now}, nil
+	credentials, err := agentcredential.NewManager(credentialStore)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{snapshots: snapshots, verifier: verifier, authors: authors, credentials: credentials, now: time.Now}, nil
 }
 
 func (service *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	for _, route := range builtRoutes {
 		var handler http.HandlerFunc
-		if service.authors == nil && isAuthoringRoute(route.Name) {
+		if service.authors == nil && isPacketAuthoringRoute(route.Name) {
 			handler = service.authenticated(http.StatusServiceUnavailable, func(identity.Principal, *http.Request) (any, error) {
 				return nil, ErrAuthoringUnavailable
+			})
+			mux.HandleFunc(route.Method+" "+route.Pattern, handler)
+			continue
+		}
+		if service.credentials == nil && isCredentialRoute(route.Name) {
+			handler = service.authenticated(http.StatusServiceUnavailable, func(identity.Principal, *http.Request) (any, error) {
+				return nil, ErrCredentialStoreUnavailable
 			})
 			mux.HandleFunc(route.Method+" "+route.Pattern, handler)
 			continue
@@ -255,10 +286,18 @@ func (service *Service) Handler() http.Handler {
 				}
 				return snapshot.Packet(principal, request.PathValue("initiative"), request.PathValue("epic"), request.PathValue("packet"), service.now().UTC())
 			})
+		case "agent-credential-list":
+			handler = service.authenticated(http.StatusOK, service.listAgentCredentials)
+		case "agent-credential-detail":
+			handler = service.authenticated(http.StatusOK, service.getAgentCredential)
 		case "draft":
 			handler = service.authenticated(http.StatusOK, service.getDraft)
 		case "authored-packet":
 			handler = service.authenticated(http.StatusOK, service.getAuthoredPacket)
+		case "agent-credential-create":
+			handler = service.authenticated(http.StatusCreated, service.createAgentCredential)
+		case "agent-credential-revoke":
+			handler = service.authenticated(http.StatusOK, service.revokeAgentCredential)
 		case "draft-create":
 			handler = service.authenticated(http.StatusCreated, service.createDraft)
 		case "draft-update":
@@ -275,9 +314,18 @@ func (service *Service) Handler() http.Handler {
 	return securityHeaders(mux)
 }
 
-func isAuthoringRoute(name string) bool {
+func isPacketAuthoringRoute(name string) bool {
 	switch name {
 	case "draft", "authored-packet", "draft-create", "draft-update", "draft-issue", "supersession-draft-create":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCredentialRoute(name string) bool {
+	switch name {
+	case "agent-credential-list", "agent-credential-detail", "agent-credential-create", "agent-credential-revoke":
 		return true
 	default:
 		return false
@@ -337,6 +385,10 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusServiceUnavailable, "exports_unavailable", "No verified export snapshot is available.", status)
 	case errors.Is(err, ErrAuthoringUnavailable):
 		writeAPIError(response, http.StatusServiceUnavailable, "store_unavailable", "Durable authoring is temporarily unavailable; the last verified export remains readable.", status)
+	case errors.Is(err, ErrCredentialStoreUnavailable):
+		writeAPIError(response, http.StatusServiceUnavailable, "credential_store_unavailable", "Durable agent credentials are temporarily unavailable.", status)
+	case errors.Is(err, ErrAgentGrantRequired):
+		writeAPIError(response, http.StatusForbidden, "grant_required", "The authenticated agent has no matching grant.", status)
 	case errors.Is(err, ErrDirectoryStale):
 		writeAPIError(response, http.StatusServiceUnavailable, "directory_stale", "The tenant directory is stale; no tenant data is being shown.", status)
 	case errors.Is(err, ErrPacketExportStale), errors.Is(err, contract.ErrStaleExport):
@@ -349,6 +401,8 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusNotFound, "not_found", "That item is not available to this tenant.", status)
 	case errors.Is(err, authoring.ErrDraftNotFound), errors.Is(err, packet.ErrNotFound):
 		writeAPIError(response, http.StatusNotFound, "not_found", "That authoring item is not available.", status)
+	case errors.Is(err, agentcredential.ErrUnknownCredential):
+		writeAPIError(response, http.StatusNotFound, "credential_not_found", "That credential is not available to this tenant.", status)
 	case errors.Is(err, authoring.ErrDraftIssued):
 		writeAPIError(response, http.StatusConflict, "draft_issued", "Issued scope is frozen; create a supersession instead.", status)
 	case errors.Is(err, authoring.ErrDraftConflict), errors.Is(err, packet.ErrConflict), errors.Is(err, packet.ErrAlreadyExists), errors.Is(err, packet.ErrClosed):
@@ -357,6 +411,8 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusUnprocessableEntity, "draft_incomplete", "Every packet field is required before issue.", status)
 	case errors.Is(err, authoring.ErrInvalidScope):
 		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_scope", "Initiative, epic, packet id, or target is not available.", status)
+	case errors.Is(err, agentcredential.ErrInvalidCredential):
+		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_credential", "The credential request is invalid.", status)
 	case errors.Is(err, errInvalidRequest):
 		writeAPIError(response, http.StatusBadRequest, "invalid_request", "The request body is invalid.", status)
 	default:
