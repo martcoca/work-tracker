@@ -4,6 +4,11 @@ const regionID = /^[a-z][a-z0-9-]{0,62}$/;
 const siteID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const revisionID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
+function shortName(name) {
+  const value = typeof name === "string" ? name : "";
+  return value.slice(value.lastIndexOf("/") + 1);
+}
+
 function requireMatch(value, pattern, name) {
   if (typeof value !== "string" || !pattern.test(value)) {
     throw new Error(`${name} is absent or malformed`);
@@ -79,7 +84,17 @@ export function selectPinnedRevision(version, service, expected) {
     throw new Error("Hosting pin does not resolve to exactly one retained Cloud Run revision");
   }
 
-  const revision = requireMatch(matches[0].revision, revisionID, "pinned Cloud Run revision");
+  // Cloud Run folds a pin that sits on the latest ready revision into the latest-revision
+  // status target, which reports percent, tag and uri but no `revision` — even though the
+  // spec keeps it as a named revision target. Rolling *forward* to the commit currently
+  // deployed is exactly that shape, so reading `revision` alone refused the roll-forward
+  // that returns production to where it started. The service's own latestReadyRevision is
+  // what that target resolves to, and the provenance check below still requires the
+  // resolved revision's source-commit annotation to equal the requested commit.
+  const named =
+    matches[0].revision ??
+    (matches[0].type === "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST" ? shortName(service?.latestReadyRevision) : "");
+  const revision = requireMatch(named, revisionID, "pinned Cloud Run revision");
   return { tag: apiPins[0].run.tag, revision };
 }
 

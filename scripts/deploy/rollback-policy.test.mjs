@@ -110,6 +110,33 @@ test("refuses a Hosting version pinned to a newer API commit", () => {
   );
 });
 
+test("resolves a pin Cloud Run folded into the latest-revision status target", () => {
+  // The real shape of a roll-forward to the commit currently deployed: the spec keeps a
+  // named revision target for the pin, but trafficStatuses merges it into the latest
+  // target, which carries the tag and no revision at all.
+  const { version, service } = fixtures();
+  service.latestReadyRevision =
+    `projects/${input.projectId}/locations/${input.region}/services/tracker-reader/revisions/tracker-reader-00002-new`;
+  service.trafficStatuses = [
+    { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100, tag: "fh-final" },
+  ];
+  assert.deepEqual(selectPinnedRevision(version, service, { versionName, region: input.region }), {
+    tag: "fh-final",
+    revision: "tracker-reader-00002-new",
+  });
+});
+
+test("refuses a folded pin on a service naming no latest ready revision", () => {
+  const { version, service } = fixtures();
+  service.trafficStatuses = [
+    { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100, tag: "fh-final" },
+  ];
+  assert.throws(
+    () => selectPinnedRevision(version, service, { versionName, region: input.region }),
+    /pinned Cloud Run revision is absent or malformed/,
+  );
+});
+
 test("refuses a service that has not settled its latest generation", () => {
   // The first real rollback was refused against a perfectly healthy service. Every shape
   // below is one the API actually produces, so a fixture cannot drift back to a value
