@@ -22,6 +22,8 @@ Check, and enough context to execute without reading another repository.
 | 10 | [`0004-E07-T02.md`](0004-E07-T02.md) | in progress | Publish the export from the app rather than from git, so the app can become the system of record |
 | 11 | [`0004-E05-T04.md`](0004-E05-T04.md) | done | **Rollback must reach a previous version.** E05-T02's mechanism cannot: each deploy reclaims the previous traffic tag, so the only reachable revision is the one already serving |
 | 12 | [`0004-E05-T02.md`](0004-E05-T02.md) | done | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
+| 13 | [`0004-E06-T01.md`](0004-E06-T01.md) | not started | Observe cloud spend and alert before the bill. The guard prevents idle cost at plan time and has never seen an actual charge |
+| 14 | [`0004-E06-T02.md`](0004-E06-T02.md) | not started | Record what the organization spends to run. Model capacity is its largest real cost and nothing records it |
 | — | [`0004-E03-T02.md`](0004-E03-T02.md) | superseded | Required revocation within one hour. ADR-0053 moved the export lifetime to 48 hours; replaced by E03-T03 |
 | — | [`0004-E02-T05.md`](0004-E02-T05.md) | done | The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
 
