@@ -20,8 +20,8 @@ Check, and enough context to execute without reading another repository.
 | 8 | [`0004-E03-T03.md`](0004-E03-T03.md) | not started | Revoke a grant and measure how long it takes to stop working. The number is the deliverable. Supersedes E03-T02 |
 | 9 | [`0004-E07-T01.md`](0004-E07-T01.md) | done | **Give the app a durable store.** The Technical Specification names Firestore; nothing delivered it, so every authored packet lives until the container recycles |
 | 10 | [`0004-E07-T02.md`](0004-E07-T02.md) | in progress | Publish the export from the app rather than from git, so the app can become the system of record |
-| 11 | [`0004-E05-T04.md`](0004-E05-T04.md) | in progress | **Rollback must reach a previous version.** E05-T02's mechanism cannot: each deploy reclaims the previous traffic tag, so the only reachable revision is the one already serving |
-| 12 | [`0004-E05-T02.md`](0004-E05-T02.md) | in progress | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
+| 11 | [`0004-E05-T04.md`](0004-E05-T04.md) | done | **Rollback must reach a previous version.** E05-T02's mechanism cannot: each deploy reclaims the previous traffic tag, so the only reachable revision is the one already serving |
+| 12 | [`0004-E05-T02.md`](0004-E05-T02.md) | done | Own `tracker.martcoca.com` in the plan rather than by hand, and make rollback one action |
 | — | [`0004-E03-T02.md`](0004-E03-T02.md) | superseded | Required revocation within one hour. ADR-0053 moved the export lifetime to 48 hours; replaced by E03-T03 |
 | — | [`0004-E02-T05.md`](0004-E02-T05.md) | done | The first deployment refused to start: it cannot fetch its own packet export before it exists. Authority exports stay strict |
 
