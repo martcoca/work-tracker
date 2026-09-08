@@ -1,8 +1,12 @@
 *
 !go.mod
 !go.sum
+!agentcredential
+!agentcredential/**
 !authoring
 !authoring/**
+!credentialstore
+!credentialstore/**
 !cmd
 !cmd/tracker-web
 !cmd/tracker-web/**
