@@ -14,7 +14,7 @@ Check, and enough context to execute without reading another repository.
 | — | [`0004-E02-T03.md`](0004-E02-T03.md) | done | The deployable image: `container_image` is required and nothing produced one, so the whole cloud path is blocked on it |
 | 4 | [`0004-E02-T02.md`](0004-E02-T02.md) | done | Author, issue and supersede a packet in the app. Issue is where scope freezes |
 | — | [`0004-E03-T04.md`](0004-E03-T04.md) | done | **Take this before E03-T01.** The product issues its own machine credentials (ADR-0056); E03-T01 blocked because nothing defined what a session presents |
-| — | [`0004-E03-T05.md`](0004-E03-T05.md) | not started | **Take this before E03-T01.** A credential names the workload it acts as, so there is something to look up in 0000's grant export (ADR-0057) |
+| — | [`0004-E03-T05.md`](0004-E03-T05.md) | in progress | **Take this before E03-T01.** A credential names the workload it acts as, so there is something to look up in 0000's grant export (ADR-0057) |
 | 5 | [`0004-E03-T01.md`](0004-E03-T01.md) | not started | The session API: authenticate with a grant from 0000, comment, transition. **Needs 0000 publishing grants** |
 | 6 | [`0004-E05-T01.md`](0004-E05-T01.md) | done | **Deploy on merge, keylessly.** The product is live and was put there by hand from one laptop, against local Terraform state. Nothing after this should need that laptop |
 | 7 | [`0004-E05-T03.md`](0004-E05-T03.md) | done | **Publish the packet export.** The app is deployed, authenticating, and empty: `packetexport.Publish` exists and nothing calls it, so `packets.json` has never existed |
