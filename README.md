@@ -37,12 +37,16 @@ never calls that one either, and serves from its last exports when it is unavail
 ## Agent credentials
 
 A signed-in human creates a packet-bound machine credential with
-`POST /api/agent-credentials`, then receives its bearer value once. Later list and detail
-responses expose only identity metadata: tenant, packet, attempt, issue/expiry, creator,
-revocation, and last use. `POST /api/agent-credentials/{credential}/revoke` takes effect on
-the next authentication transaction.
+`POST /api/agent-credentials`, naming the workload tenant, issuer, and subject it acts as,
+then receives its bearer value once. A workload outside the signed-in tenant is refused.
+Later list and detail responses expose only identity metadata: the tenant-bound workload,
+the separate packet and attempt binding, issue/expiry, creator, revocation, and last use.
+`POST /api/agent-credentials/{credential}/revoke` takes effect on the next authentication
+transaction.
 
 The bearer value is presented as `Authorization: Bearer <one-time value>`. The service stores
 only its SHA-256 digest in the existing Firestore database. A successful match puts the
-session principal and tenant on the request; it contributes no scope. Every comment or
-status operation must still find its named permission in 0000's current agent-grants export.
+tenant, workload principal, and packet binding on the request; it contributes no scope.
+Grant lookup uses only tenant plus workload issuer and subject—never packet or attempt.
+Every comment or status operation must still find its named permission in 0000's current
+agent-grants export.

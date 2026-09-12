@@ -38,8 +38,13 @@ func TestFirestoreCredentialLifecycle(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	issued, err := manager.Create(context.Background(), agentcredential.CreateCommand{
-		TenantID: "tenant-integration", PacketID: "0004-E03-T04",
+		TenantID: "tenant-integration", PacketID: "0004-E03-T05",
 		AttemptID: namespace, CreatedBy: "human-integration", ExpiresAt: now.Add(time.Hour),
+		WorkloadTenantID: "tenant-integration",
+		Workload: agentcredential.Workload{
+			Kind:   agentcredential.WorkloadKind,
+			Issuer: "https://identity.invalid", Subject: "workload-integration",
+		},
 	}, now)
 	if err != nil {
 		t.Fatal(err)

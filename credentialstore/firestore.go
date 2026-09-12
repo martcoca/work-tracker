@@ -20,9 +20,11 @@ import (
 
 const (
 	DefaultDatabaseID = "(default)"
-	DefaultNamespace  = "agent-credentials"
-	defaultTimeout    = 10 * time.Second
-	documentSchema    = int64(1)
+	// Workload binding changed the stored authority shape. A separate namespace keeps
+	// pre-workload documents from authenticating or breaking a list decode.
+	DefaultNamespace = "agent-credentials-v2"
+	defaultTimeout   = 10 * time.Second
+	documentSchema   = int64(2)
 )
 
 var namespacePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
@@ -43,19 +45,21 @@ type Firestore struct {
 }
 
 type credentialDocument struct {
-	SchemaVersion  int64      `firestore:"schema_version"`
-	ID             string     `firestore:"id"`
-	TenantID       string     `firestore:"tenant_id"`
-	PacketID       string     `firestore:"packet_id"`
-	AttemptID      string     `firestore:"attempt_id"`
-	IssuedAt       time.Time  `firestore:"issued_at"`
-	ExpiresAt      time.Time  `firestore:"expires_at"`
-	CreatedBy      string     `firestore:"created_by"`
-	CreatedAt      time.Time  `firestore:"created_at"`
-	CredentialHash []byte     `firestore:"credential_hash"`
-	RevokedBy      string     `firestore:"revoked_by,omitempty"`
-	RevokedAt      *time.Time `firestore:"revoked_at,omitempty"`
-	LastUsedAt     *time.Time `firestore:"last_used_at,omitempty"`
+	SchemaVersion   int64      `firestore:"schema_version"`
+	ID              string     `firestore:"id"`
+	TenantID        string     `firestore:"tenant_id"`
+	PacketID        string     `firestore:"packet_id"`
+	AttemptID       string     `firestore:"attempt_id"`
+	WorkloadIssuer  string     `firestore:"workload_issuer"`
+	WorkloadSubject string     `firestore:"workload_subject"`
+	IssuedAt        time.Time  `firestore:"issued_at"`
+	ExpiresAt       time.Time  `firestore:"expires_at"`
+	CreatedBy       string     `firestore:"created_by"`
+	CreatedAt       time.Time  `firestore:"created_at"`
+	CredentialHash  []byte     `firestore:"credential_hash"`
+	RevokedBy       string     `firestore:"revoked_by,omitempty"`
+	RevokedAt       *time.Time `firestore:"revoked_at,omitempty"`
+	LastUsedAt      *time.Time `firestore:"last_used_at,omitempty"`
 }
 
 func NewFirestore(ctx context.Context, config Config) (*Firestore, error) {
@@ -229,9 +233,10 @@ func (store *Firestore) Revoke(ctx context.Context, tenantID, identifier, actor 
 func encodeDocument(record agentcredential.StoredRecord) credentialDocument {
 	return credentialDocument{
 		SchemaVersion: documentSchema, ID: record.Metadata.ID,
-		TenantID: record.Metadata.TenantID, PacketID: record.Metadata.Principal.PacketID,
-		AttemptID: record.Metadata.Principal.AttemptID,
-		IssuedAt:  record.Metadata.Principal.IssuedAt, ExpiresAt: record.Metadata.Principal.ExpiresAt,
+		TenantID: record.Metadata.TenantID, PacketID: record.Metadata.Binding.PacketID,
+		AttemptID:      record.Metadata.Binding.AttemptID,
+		WorkloadIssuer: record.Metadata.Workload.Issuer, WorkloadSubject: record.Metadata.Workload.Subject,
+		IssuedAt: record.Metadata.Binding.IssuedAt, ExpiresAt: record.Metadata.Binding.ExpiresAt,
 		CreatedBy: record.Metadata.CreatedBy, CreatedAt: record.Metadata.CreatedAt,
 		CredentialHash: append([]byte(nil), record.Hash[:]...),
 		RevokedBy:      record.Metadata.RevokedBy, RevokedAt: cloneTime(record.Metadata.RevokedAt),
@@ -252,6 +257,7 @@ func decodeDocument(document credentialDocument) (agentcredential.StoredRecord, 
 		return agentcredential.StoredRecord{}, fmt.Errorf("unsupported credential schema %d", document.SchemaVersion)
 	}
 	if document.ID == "" || document.TenantID == "" || document.PacketID == "" || document.AttemptID == "" ||
+		document.WorkloadIssuer == "" || document.WorkloadSubject == "" ||
 		document.CreatedBy == "" || document.IssuedAt.IsZero() || document.ExpiresAt.IsZero() || document.CreatedAt.IsZero() ||
 		len(document.CredentialHash) != sha256.Size {
 		return agentcredential.StoredRecord{}, errors.New("stored credential is incomplete")
@@ -263,8 +269,12 @@ func decodeDocument(document credentialDocument) (agentcredential.StoredRecord, 
 	copy(hash[:], document.CredentialHash)
 	record := agentcredential.StoredRecord{Metadata: agentcredential.Metadata{
 		ID: document.ID, TenantID: document.TenantID,
-		Principal: agentcredential.Principal{
-			Kind: "session", PacketID: document.PacketID, AttemptID: document.AttemptID,
+		Workload: agentcredential.Workload{
+			Kind:   agentcredential.WorkloadKind,
+			Issuer: document.WorkloadIssuer, Subject: document.WorkloadSubject,
+		},
+		Binding: agentcredential.Binding{
+			PacketID: document.PacketID, AttemptID: document.AttemptID,
 			IssuedAt: document.IssuedAt.UTC(), ExpiresAt: document.ExpiresAt.UTC(),
 		},
 		CreatedBy: document.CreatedBy, CreatedAt: document.CreatedAt.UTC(),

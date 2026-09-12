@@ -16,7 +16,8 @@ import (
 func TestSignedInHumanCreatesCredentialOnceAndRetrievesOnlyMetadata(t *testing.T) {
 	service := testService(t, testSnapshot(t, surfaceClock.Add(-30*time.Minute)), surfaceClock)
 	issued := createAgentCredential(t, service, "human-a", surfaceClock.Add(45*time.Minute))
-	if issued.Credential == "" || issued.Metadata.Principal.Kind != "session" || issued.Metadata.TenantID != "tenant-a" {
+	if issued.Credential == "" || issued.Metadata.Workload.Kind != agentcredential.WorkloadKind ||
+		issued.Metadata.TenantID != "tenant-a" {
 		t.Fatalf("issued credential metadata = %#v", issued.Metadata)
 	}
 
@@ -25,7 +26,10 @@ func TestSignedInHumanCreatesCredentialOnceAndRetrievesOnlyMetadata(t *testing.T
 		t.Fatalf("credential detail exposed one-time value: %d %s", detail.Code, detail.Body.String())
 	}
 	listed := get(t, service, "/api/agent-credentials", "human-a")
-	if listed.Code != http.StatusOK || strings.Contains(listed.Body.String(), issued.Credential) || !strings.Contains(listed.Body.String(), issued.Metadata.ID) {
+	if listed.Code != http.StatusOK || strings.Contains(listed.Body.String(), issued.Credential) ||
+		!strings.Contains(listed.Body.String(), issued.Metadata.ID) ||
+		!strings.Contains(listed.Body.String(), issued.Metadata.Workload.Issuer) ||
+		!strings.Contains(listed.Body.String(), issued.Metadata.Workload.Subject) {
 		t.Fatalf("credential list = %d %s", listed.Code, listed.Body.String())
 	}
 	otherTenant := get(t, service, "/api/agent-credentials/"+issued.Metadata.ID, "human-b")
@@ -37,6 +41,9 @@ func TestSignedInHumanCreatesCredentialOnceAndRetrievesOnlyMetadata(t *testing.T
 	bootstrap := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", issued.Credential, map[string]any{
 		"packet_id": "0004-E02-T01", "attempt_id": "attempt-bootstrap",
 		"expires_at": surfaceClock.Add(45 * time.Minute).Format(time.RFC3339),
+		"workload": map[string]any{
+			"tenant_id": "tenant-a", "issuer": "https://identity.invalid", "subject": "workload-a",
+		},
 	})
 	if bootstrap.Code != http.StatusUnauthorized || !strings.Contains(bootstrap.Body.String(), `"code":"invalid_identity"`) {
 		t.Fatalf("machine bootstrap = %d %s", bootstrap.Code, bootstrap.Body.String())
@@ -65,7 +72,8 @@ func TestMachineAuthenticationCarriesIdentityRecordsUseAndGrantsNothing(t *testi
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"grant_required"`) {
 		t.Fatalf("no-grant response = %d %s", response.Code, response.Body.String())
 	}
-	if authenticated.TenantID != "tenant-a" || authenticated.Principal != issued.Metadata.Principal {
+	if authenticated.TenantID != "tenant-a" || authenticated.Workload != issued.Metadata.Workload ||
+		authenticated.Binding != issued.Metadata.Binding {
 		t.Fatalf("authenticated identity = %#v", authenticated)
 	}
 	detail := get(t, service, "/api/agent-credentials/"+issued.Metadata.ID, "human-a")
@@ -73,8 +81,9 @@ func TestMachineAuthenticationCarriesIdentityRecordsUseAndGrantsNothing(t *testi
 	if metadata.LastUsedAt == nil || !metadata.LastUsedAt.Equal(surfaceClock) {
 		t.Fatalf("last used = %v", metadata.LastUsedAt)
 	}
-	t.Logf("authenticated as packet=%s attempt=%s; verified empty agent-grants export refused with HTTP %d; last use recorded",
-		authenticated.Principal.PacketID, authenticated.Principal.AttemptID, response.Code)
+	t.Logf("authenticated workload=%s/%s beside packet=%s attempt=%s; verified empty agent-grants export refused with HTTP %d; last use recorded",
+		authenticated.Workload.Issuer, authenticated.Workload.Subject,
+		authenticated.Binding.PacketID, authenticated.Binding.AttemptID, response.Code)
 }
 
 func TestMachineCredentialRefusalsAreDistinctAndRevocationIsImmediate(t *testing.T) {
@@ -115,16 +124,51 @@ func TestCredentialRequestRequiresOwnedPacketAndAtMostOneHour(t *testing.T) {
 		"other tenant packet": {body: map[string]any{
 			"packet_id": "0005-E01-T01", "attempt_id": "attempt-a",
 			"expires_at": surfaceClock.Add(time.Hour).Format(time.RFC3339),
+			"workload":   workloadRequestBody("tenant-a", "https://identity.invalid", "workload-a"),
 		}, want: http.StatusNotFound},
 		"overlong": {body: map[string]any{
 			"packet_id": "0004-E02-T01", "attempt_id": "attempt-a",
 			"expires_at": surfaceClock.Add(time.Hour + time.Second).Format(time.RFC3339),
+			"workload":   workloadRequestBody("tenant-a", "https://identity.invalid", "workload-a"),
 		}, want: http.StatusUnprocessableEntity},
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", test.body)
 			if response.Code != test.want {
-				t.Fatalf("response = %d %s, want %d", response.Code, response.Body.String(), test.want)
+				t.Fatalf("credential creation status = %d, want %d; response body withheld", response.Code, test.want)
+			}
+		})
+	}
+}
+
+func TestCredentialRequestRefusesInvalidAndCrossTenantWorkloadsDistinctly(t *testing.T) {
+	service := testService(t, testSnapshot(t, surfaceClock.Add(-30*time.Minute)), surfaceClock)
+	tests := []struct {
+		name     string
+		workload map[string]any
+		status   int
+		code     string
+	}{
+		{name: "workload absent", status: http.StatusUnprocessableEntity, code: "invalid_workload"},
+		{name: "issuer malformed", workload: workloadRequestBody("tenant-a", "http://identity.invalid", "workload-a"), status: http.StatusUnprocessableEntity, code: "invalid_workload"},
+		{name: "subject absent", workload: workloadRequestBody("tenant-a", "https://identity.invalid", ""), status: http.StatusUnprocessableEntity, code: "invalid_workload"},
+		{name: "other tenant", workload: workloadRequestBody("tenant-b", "https://identity.invalid", "workload-b"), status: http.StatusForbidden, code: "workload_tenant_mismatch"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := map[string]any{
+				"packet_id": "0004-E02-T01", "attempt_id": "attempt-e03-t05",
+				"expires_at": surfaceClock.Add(45 * time.Minute).Format(time.RFC3339Nano),
+			}
+			if test.workload != nil {
+				body["workload"] = test.workload
+			}
+			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", body)
+			if response.Code != test.status {
+				t.Fatalf("credential creation status = %d, want %d; response body withheld", response.Code, test.status)
+			}
+			if !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("credential creation did not return code %q", test.code)
 			}
 		})
 	}
@@ -133,13 +177,18 @@ func TestCredentialRequestRequiresOwnedPacketAndAtMostOneHour(t *testing.T) {
 func createAgentCredential(t *testing.T, service *Service, human string, expiresAt time.Time) agentcredential.Issued {
 	t.Helper()
 	response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", human, map[string]any{
-		"packet_id": "0004-E02-T01", "attempt_id": "attempt-e03-t04",
+		"packet_id": "0004-E02-T01", "attempt_id": "attempt-e03-t05",
 		"expires_at": expiresAt.Format(time.RFC3339Nano),
+		"workload":   workloadRequestBody("tenant-a", "https://identity.invalid", "workload-a"),
 	})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create credential = %d %s", response.Code, response.Body.String())
 	}
 	return decodeBody[agentcredential.Issued](t, response)
+}
+
+func workloadRequestBody(tenantID, issuer, subject string) map[string]any {
+	return map[string]any{"tenant_id": tenantID, "issuer": issuer, "subject": subject}
 }
 
 func writeJSONRequest(t *testing.T, service *Service, method, path, bearer string, body any) *httptest.ResponseRecorder {
@@ -208,7 +257,8 @@ func emptyPublishedGrantRefusal(t *testing.T, identity agentcredential.Identity)
 	if err := json.Unmarshal(verified.Payload, &grants); err != nil {
 		t.Fatal(err)
 	}
-	if len(grants) != 0 || identity.Principal.Kind != "session" {
+	if len(grants) != 0 || identity.Workload.Kind != agentcredential.WorkloadKind ||
+		identity.Binding.PacketID == "" || identity.Binding.AttemptID == "" {
 		t.Fatal("synthetic published export was not the intended no-grant case")
 	}
 	return ErrAgentGrantRequired
