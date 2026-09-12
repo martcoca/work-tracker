@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -65,6 +66,19 @@ func TestValidCredentialResolvesOnlyIdentityAndRecordsLastUse(t *testing.T) {
 	}
 	if fields := []any{identity.TenantID, identity.Workload, identity.Binding}; len(fields) != 3 {
 		t.Fatal("identity unexpectedly carried authorization")
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), issued.Credential) || strings.Contains(string(encoded), `"credential"`) ||
+		strings.Contains(string(encoded), `"scope"`) {
+		t.Fatal("authenticated identity exposed credential material or authorization")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil || len(fields) != 3 ||
+		fields["tenant_id"] == nil || fields["workload"] == nil || fields["binding"] == nil {
+		t.Fatalf("authenticated identity fields = %v, error=%v", fields, err)
 	}
 	t.Logf("valid credential resolved to workload=%s/%s packet=%s attempt=%s and last_used_at=%s",
 		identity.Workload.Issuer, identity.Workload.Subject, identity.Binding.PacketID,
