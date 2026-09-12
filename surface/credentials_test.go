@@ -135,7 +135,7 @@ func TestCredentialRequestRequiresOwnedPacketAndAtMostOneHour(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", test.body)
 			if response.Code != test.want {
-				t.Fatalf("response = %d %s, want %d", response.Code, response.Body.String(), test.want)
+				t.Fatalf("credential creation status = %d, want %d; response body withheld", response.Code, test.want)
 			}
 		})
 	}
@@ -164,8 +164,11 @@ func TestCredentialRequestRefusesInvalidAndCrossTenantWorkloadsDistinctly(t *tes
 				body["workload"] = test.workload
 			}
 			response := writeJSONRequest(t, service, http.MethodPost, "/api/agent-credentials", "human-a", body)
-			if response.Code != test.status || !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
-				t.Fatalf("response = %d %s, want status=%d code=%q", response.Code, response.Body.String(), test.status, test.code)
+			if response.Code != test.status {
+				t.Fatalf("credential creation status = %d, want %d; response body withheld", response.Code, test.status)
+			}
+			if !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("credential creation did not return code %q", test.code)
 			}
 		})
 	}
