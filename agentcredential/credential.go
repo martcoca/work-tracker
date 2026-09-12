@@ -12,16 +12,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 )
 
 const (
-	MaximumLifetime  = time.Hour
-	credentialPrefix = "wta_"
-	identifierBytes  = 16
-	credentialBytes  = 32
+	MaximumLifetime      = time.Hour
+	WorkloadKind         = "workload"
+	credentialPrefix     = "wta_"
+	identifierBytes      = 16
+	credentialBytes      = 32
+	maximumWorkloadValue = 512
 )
 
 var (
@@ -30,25 +33,35 @@ var (
 	ErrRevokedCredential = errors.New("revoked agent credential")
 	ErrExpiredCredential = errors.New("expired agent credential")
 	ErrInvalidCredential = errors.New("invalid agent credential request")
+	ErrInvalidWorkload   = errors.New("invalid workload principal")
+	ErrWorkloadTenant    = errors.New("workload belongs to another tenant")
 	ErrCredentialExists  = errors.New("agent credential already exists")
 	packetIDPattern      = regexp.MustCompile(`^[0-9]{4}-E[0-9]{2}-T[0-9]{2}$`)
 	identifierPattern    = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
-// Principal is the session-principal shape published by initiative 0000.
-type Principal struct {
-	Kind      string    `json:"kind"`
+// Workload is the authority principal a grant names. The enclosing identity supplies the
+// tenant without putting packet or attempt details into the grant lookup.
+type Workload struct {
+	Kind    string `json:"kind"`
+	Issuer  string `json:"issuer"`
+	Subject string `json:"subject"`
+}
+
+// Binding is enforced by this product and is never part of a grant lookup.
+type Binding struct {
 	PacketID  string    `json:"packet_id"`
 	AttemptID string    `json:"attempt_id"`
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// Identity adds the grant's tenant binding to the authenticated principal. It carries no
-// scope or authorization result.
+// Identity carries the workload used for grant lookup beside the packet binding enforced
+// here. It carries no scope or authorization result.
 type Identity struct {
-	TenantID  string    `json:"tenant_id"`
-	Principal Principal `json:"principal"`
+	TenantID string   `json:"tenant_id"`
+	Workload Workload `json:"workload"`
+	Binding  Binding  `json:"binding"`
 }
 
 // Metadata is everything a human may retrieve after creation. The one-time credential
@@ -56,7 +69,8 @@ type Identity struct {
 type Metadata struct {
 	ID         string     `json:"id"`
 	TenantID   string     `json:"tenant_id"`
-	Principal  Principal  `json:"principal"`
+	Workload   Workload   `json:"workload"`
+	Binding    Binding    `json:"binding"`
 	CreatedBy  string     `json:"created_by"`
 	CreatedAt  time.Time  `json:"created_at"`
 	RevokedBy  string     `json:"revoked_by,omitempty"`
@@ -78,11 +92,13 @@ type Issued struct {
 }
 
 type CreateCommand struct {
-	TenantID  string
-	PacketID  string
-	AttemptID string
-	CreatedBy string
-	ExpiresAt time.Time
+	TenantID         string
+	PacketID         string
+	AttemptID        string
+	WorkloadTenantID string
+	Workload         Workload
+	CreatedBy        string
+	ExpiresAt        time.Time
 }
 
 // Store makes revocation and last-use recording part of the authentication transaction.
@@ -128,8 +144,9 @@ func (manager *Manager) Create(ctx context.Context, command CreateCommand, at ti
 	hash := sha256.Sum256([]byte(value))
 	record := StoredRecord{Metadata: Metadata{
 		ID: identifier, TenantID: command.TenantID,
-		Principal: Principal{
-			Kind: "session", PacketID: command.PacketID, AttemptID: command.AttemptID,
+		Workload: command.Workload,
+		Binding: Binding{
+			PacketID: command.PacketID, AttemptID: command.AttemptID,
 			IssuedAt: at, ExpiresAt: command.ExpiresAt,
 		},
 		CreatedBy: command.CreatedBy, CreatedAt: at,
@@ -159,7 +176,11 @@ func (manager *Manager) Authenticate(ctx context.Context, authorization string, 
 	if err != nil {
 		return Identity{}, err
 	}
-	return Identity{TenantID: record.Metadata.TenantID, Principal: record.Metadata.Principal}, nil
+	return Identity{
+		TenantID: record.Metadata.TenantID,
+		Workload: record.Metadata.Workload,
+		Binding:  record.Metadata.Binding,
+	}, nil
 }
 
 func (manager *Manager) Get(ctx context.Context, tenantID, identifier string) (Metadata, error) {
@@ -203,6 +224,13 @@ func validateCreate(command CreateCommand, at time.Time) error {
 	switch {
 	case !validIdentityValue(command.TenantID):
 		return fmt.Errorf("%w: tenant id is required", ErrInvalidCredential)
+	case !validIdentityValue(command.WorkloadTenantID):
+		return fmt.Errorf("%w: workload tenant is required", ErrInvalidWorkload)
+	case command.WorkloadTenantID != command.TenantID:
+		return ErrWorkloadTenant
+	case command.Workload.Kind != WorkloadKind || !validWorkloadIssuer(command.Workload.Issuer) ||
+		!validWorkloadSubject(command.Workload.Subject):
+		return ErrInvalidWorkload
 	case !packetIDPattern.MatchString(command.PacketID):
 		return fmt.Errorf("%w: packet id is invalid", ErrInvalidCredential)
 	case !validIdentityValue(command.AttemptID) || len(command.AttemptID) > 256:
@@ -223,12 +251,14 @@ func validateCreate(command CreateCommand, at time.Time) error {
 func ValidateStoredRecord(record StoredRecord) error {
 	metadata := record.Metadata
 	if !identifierPattern.MatchString(metadata.ID) || !validIdentityValue(metadata.TenantID) ||
-		metadata.Principal.Kind != "session" || !packetIDPattern.MatchString(metadata.Principal.PacketID) ||
-		!validIdentityValue(metadata.Principal.AttemptID) || len(metadata.Principal.AttemptID) > 256 ||
+		metadata.Workload.Kind != WorkloadKind ||
+		!validWorkloadIssuer(metadata.Workload.Issuer) || !validWorkloadSubject(metadata.Workload.Subject) ||
+		!packetIDPattern.MatchString(metadata.Binding.PacketID) ||
+		!validIdentityValue(metadata.Binding.AttemptID) || len(metadata.Binding.AttemptID) > 256 ||
 		!validIdentityValue(metadata.CreatedBy) || metadata.CreatedAt.IsZero() ||
-		!metadata.CreatedAt.Equal(metadata.Principal.IssuedAt) ||
-		!metadata.Principal.ExpiresAt.After(metadata.Principal.IssuedAt) ||
-		metadata.Principal.ExpiresAt.Sub(metadata.Principal.IssuedAt) > MaximumLifetime {
+		!metadata.CreatedAt.Equal(metadata.Binding.IssuedAt) ||
+		!metadata.Binding.ExpiresAt.After(metadata.Binding.IssuedAt) ||
+		metadata.Binding.ExpiresAt.Sub(metadata.Binding.IssuedAt) > MaximumLifetime {
 		return fmt.Errorf("%w: stored credential metadata is invalid", ErrInvalidCredential)
 	}
 	if metadata.RevokedAt == nil && metadata.RevokedBy != "" || metadata.RevokedAt != nil && !validIdentityValue(metadata.RevokedBy) {
@@ -253,7 +283,7 @@ func ValidateAuthentication(record StoredRecord, hash [sha256.Size]byte, at time
 	if record.Metadata.RevokedAt != nil {
 		return ErrRevokedCredential
 	}
-	if !at.Before(record.Metadata.Principal.ExpiresAt) {
+	if !at.Before(record.Metadata.Binding.ExpiresAt) {
 		return ErrExpiredCredential
 	}
 	return nil
@@ -261,6 +291,19 @@ func ValidateAuthentication(record StoredRecord, hash [sha256.Size]byte, at time
 
 func validIdentityValue(value string) bool {
 	return value != "" && value == strings.TrimSpace(value) && !strings.ContainsAny(value, "\r\n\x00")
+}
+
+func validWorkloadIssuer(value string) bool {
+	if !validIdentityValue(value) || len(value) > maximumWorkloadValue {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
+		parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func validWorkloadSubject(value string) bool {
+	return validIdentityValue(value) && len(value) <= maximumWorkloadValue
 }
 
 func bearerValue(header string) (string, error) {

@@ -403,6 +403,8 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusNotFound, "not_found", "That authoring item is not available.", status)
 	case errors.Is(err, agentcredential.ErrUnknownCredential):
 		writeAPIError(response, http.StatusNotFound, "credential_not_found", "That credential is not available to this tenant.", status)
+	case errors.Is(err, agentcredential.ErrWorkloadTenant):
+		writeAPIError(response, http.StatusForbidden, "workload_tenant_mismatch", "That workload belongs to another tenant.", status)
 	case errors.Is(err, authoring.ErrDraftIssued):
 		writeAPIError(response, http.StatusConflict, "draft_issued", "Issued scope is frozen; create a supersession instead.", status)
 	case errors.Is(err, authoring.ErrDraftConflict), errors.Is(err, packet.ErrConflict), errors.Is(err, packet.ErrAlreadyExists), errors.Is(err, packet.ErrClosed):
@@ -413,6 +415,8 @@ func (service *Service) writeOperationError(response http.ResponseWriter, err er
 		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_scope", "Initiative, epic, packet id, or target is not available.", status)
 	case errors.Is(err, agentcredential.ErrInvalidCredential):
 		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_credential", "The credential request is invalid.", status)
+	case errors.Is(err, agentcredential.ErrInvalidWorkload):
+		writeAPIError(response, http.StatusUnprocessableEntity, "invalid_workload", "The workload principal is invalid.", status)
 	case errors.Is(err, errInvalidRequest):
 		writeAPIError(response, http.StatusBadRequest, "invalid_request", "The request body is invalid.", status)
 	default:

@@ -53,7 +53,9 @@ func TestValidCredentialResolvesOnlyIdentityAndRecordsLastUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Identity{TenantID: "tenant-a", Principal: issued.Metadata.Principal}
+	want := Identity{
+		TenantID: "tenant-a", Workload: issued.Metadata.Workload, Binding: issued.Metadata.Binding,
+	}
 	if identity != want {
 		t.Fatalf("identity = %#v, want %#v", identity, want)
 	}
@@ -61,10 +63,12 @@ func TestValidCredentialResolvesOnlyIdentityAndRecordsLastUse(t *testing.T) {
 	if err != nil || metadata.LastUsedAt == nil || !metadata.LastUsedAt.Equal(usedAt) {
 		t.Fatalf("last use = %v, error=%v", metadata.LastUsedAt, err)
 	}
-	if fields := []any{identity.TenantID, identity.Principal}; len(fields) != 2 {
+	if fields := []any{identity.TenantID, identity.Workload, identity.Binding}; len(fields) != 3 {
 		t.Fatal("identity unexpectedly carried authorization")
 	}
-	t.Logf("valid credential resolved to kind=%s packet=%s and last_used_at=%s", identity.Principal.Kind, identity.Principal.PacketID, metadata.LastUsedAt.Format(time.RFC3339))
+	t.Logf("valid credential resolved to workload=%s/%s packet=%s attempt=%s and last_used_at=%s",
+		identity.Workload.Issuer, identity.Workload.Subject, identity.Binding.PacketID,
+		identity.Binding.AttemptID, metadata.LastUsedAt.Format(time.RFC3339))
 }
 
 func TestCredentialRefusalsAreDistinctAndRevocationIsImmediate(t *testing.T) {
@@ -102,12 +106,45 @@ func TestCredentialRefusalsAreDistinctAndRevocationIsImmediate(t *testing.T) {
 	t.Log("valid before revocation; the immediately following request was refused as revoked")
 }
 
-func TestCredentialCreationKeepsTheSessionPrincipalNarrow(t *testing.T) {
+func TestCredentialCreationRequiresAValidTenantBoundWorkload(t *testing.T) {
 	manager, _ := deterministicManager(t)
 	for name, command := range map[string]CreateCommand{
-		"other tenant omitted": {PacketID: "0004-E03-T04", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour)},
-		"invalid packet":       {TenantID: "tenant-a", PacketID: "packet-a", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour)},
-		"over one hour":        {TenantID: "tenant-a", PacketID: "0004-E03-T04", AttemptID: "attempt-a", CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour + time.Nanosecond)},
+		"workload omitted": {
+			TenantID: "tenant-a", PacketID: "0004-E03-T05", AttemptID: "attempt-a",
+			CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour),
+		},
+		"issuer malformed": {
+			TenantID: "tenant-a", PacketID: "0004-E03-T05", AttemptID: "attempt-a",
+			WorkloadTenantID: "tenant-a", Workload: workload("http://identity.invalid", "subject-a"),
+			CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour),
+		},
+		"subject absent": {
+			TenantID: "tenant-a", PacketID: "0004-E03-T05", AttemptID: "attempt-a",
+			WorkloadTenantID: "tenant-a", Workload: workload("https://identity.invalid", ""),
+			CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := manager.Create(context.Background(), command, credentialClock); !errors.Is(err, ErrInvalidWorkload) {
+				t.Fatalf("error = %v, want ErrInvalidWorkload", err)
+			}
+		})
+	}
+
+	outside := validCreateCommand(credentialClock.Add(time.Hour))
+	outside.WorkloadTenantID = "tenant-b"
+	if _, err := manager.Create(context.Background(), outside, credentialClock); !errors.Is(err, ErrWorkloadTenant) {
+		t.Fatalf("cross-tenant workload error = %v, want ErrWorkloadTenant", err)
+	}
+
+	for name, command := range map[string]CreateCommand{
+		"tenant omitted": {PacketID: "0004-E03-T05", AttemptID: "attempt-a", WorkloadTenantID: "tenant-a", Workload: workload("https://identity.invalid", "subject-a"), CreatedBy: "human-a", ExpiresAt: credentialClock.Add(time.Hour)},
+		"invalid packet": func() CreateCommand {
+			value := validCreateCommand(credentialClock.Add(time.Hour))
+			value.PacketID = "packet-a"
+			return value
+		}(),
+		"over one hour": validCreateCommand(credentialClock.Add(time.Hour + time.Nanosecond)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := manager.Create(context.Background(), command, credentialClock); !errors.Is(err, ErrInvalidCredential) {
@@ -134,14 +171,23 @@ func deterministicManager(t *testing.T) (*Manager, *MemoryStore) {
 
 func createCredential(t *testing.T, manager *Manager, expiresAt time.Time) Issued {
 	t.Helper()
-	issued, err := manager.Create(context.Background(), CreateCommand{
-		TenantID: "tenant-a", PacketID: "0004-E03-T04", AttemptID: "attempt-a",
-		CreatedBy: "human-a", ExpiresAt: expiresAt,
-	}, credentialClock)
+	issued, err := manager.Create(context.Background(), validCreateCommand(expiresAt), credentialClock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return issued
+}
+
+func validCreateCommand(expiresAt time.Time) CreateCommand {
+	return CreateCommand{
+		TenantID: "tenant-a", PacketID: "0004-E03-T05", AttemptID: "attempt-a",
+		WorkloadTenantID: "tenant-a", Workload: workload("https://identity.invalid", "workload-a"),
+		CreatedBy: "human-a", ExpiresAt: expiresAt,
+	}
+}
+
+func workload(issuer, subject string) Workload {
+	return Workload{Kind: WorkloadKind, Issuer: issuer, Subject: subject}
 }
 
 func mutateCredential(value string) string {

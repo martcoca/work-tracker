@@ -10,9 +10,16 @@ import (
 )
 
 type createAgentCredentialRequest struct {
-	PacketID  string `json:"packet_id"`
-	AttemptID string `json:"attempt_id"`
-	ExpiresAt string `json:"expires_at"`
+	PacketID  string          `json:"packet_id"`
+	AttemptID string          `json:"attempt_id"`
+	ExpiresAt string          `json:"expires_at"`
+	Workload  workloadRequest `json:"workload"`
+}
+
+type workloadRequest struct {
+	TenantID string `json:"tenant_id"`
+	Issuer   string `json:"issuer"`
+	Subject  string `json:"subject"`
 }
 
 type credentialMetadataResponse struct {
@@ -38,6 +45,11 @@ func (service *Service) createAgentCredential(principal identity.Principal, requ
 	}
 	return service.credentials.Create(request.Context(), agentcredential.CreateCommand{
 		TenantID: principal.TenantID, PacketID: body.PacketID, AttemptID: body.AttemptID,
+		WorkloadTenantID: body.Workload.TenantID,
+		Workload: agentcredential.Workload{
+			Kind:   agentcredential.WorkloadKind,
+			Issuer: body.Workload.Issuer, Subject: body.Workload.Subject,
+		},
 		CreatedBy: principal.Subject, ExpiresAt: expiresAt,
 	}, now)
 }
