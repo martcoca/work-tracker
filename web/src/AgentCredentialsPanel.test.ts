@@ -93,6 +93,8 @@ describe("agent credential surface", () => {
       "repository:synthetic/work-tracker:ref:refs/heads/main",
       "0004-E03-T01",
       "attempt-ui",
+      "May 6, 2035, 12:00 PM UTC",
+      "May 6, 2035, 12:45 PM UTC",
       "Never",
       "Revoked",
     ]) {
@@ -148,8 +150,8 @@ describe("agent credential surface", () => {
     await wrapper.get("#credential-lifetime").setValue("61");
     await wrapper.get("form").trigger("submit");
     await flushPromises();
-    expect(wrapper.get("[role=alert]").text()).toContain("1 through 60 minutes");
     expect(api.write).not.toHaveBeenCalled();
+    expect(wrapper.get("[role=alert]").text()).toContain("1 through 60 minutes");
     wrapper.unmount();
   });
 });
