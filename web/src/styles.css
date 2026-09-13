@@ -24,6 +24,9 @@ button.secondary { background: transparent; border: 1px solid #d5e3ee; }
 .brand { color: white; font-size: 1.5rem; font-weight: 800; text-decoration: none; }
 .eyebrow { color: #486581; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; margin: 0 0 0.3rem; text-transform: uppercase; }
 .site-header .eyebrow { color: #bcccdc; }
+.header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: flex-end; }
+.header-link { color: white; font-weight: 700; }
+.header-link:hover { color: #e3f8ff; }
 .breadcrumbs { background: white; border-bottom: 1px solid #d9e2ec; padding: 0.75rem max(1.25rem, calc((100% - 72rem) / 2)); }
 .breadcrumbs ol { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
 .breadcrumbs li + li::before { color: #829ab1; content: "/"; margin-right: 0.5rem; }
@@ -59,9 +62,9 @@ th, td { border-top: 1px solid #d9e2ec; padding: 0.9rem; text-align: left; verti
 .event-facts dt { font-weight: 800; }
 .event-facts dd { margin: 0; }
 .authoring { max-width: 56rem; }
-.authoring-form { background: white; border: 1px solid #d9e2ec; border-radius: 0.65rem; display: grid; gap: 0.5rem; padding: clamp(1rem, 4vw, 2rem); }
-.authoring-form label { font-weight: 800; margin-top: 0.65rem; }
-.authoring-form input, .authoring-form textarea { border: 1px solid #829ab1; border-radius: 0.35rem; color: #102a43; font: inherit; padding: 0.7rem; width: 100%; }
+.authoring-form, .credential-form { background: white; border: 1px solid #d9e2ec; border-radius: 0.65rem; display: grid; gap: 0.5rem; padding: clamp(1rem, 4vw, 2rem); }
+.authoring-form label, .credential-form label { font-weight: 800; margin-top: 0.65rem; }
+.authoring-form input, .authoring-form textarea, .credential-form input { border: 1px solid #829ab1; border-radius: 0.35rem; color: #102a43; font: inherit; padding: 0.7rem; width: 100%; }
 .authoring-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
 .authoring-actions .issue { background: #166534; }
 .authoring-actions .issue:hover { background: #14532d; }
@@ -69,6 +72,15 @@ th, td { border-top: 1px solid #d9e2ec; padding: 0.9rem; text-align: left; verti
 .error-message { background: #fff1f2; border-left: 0.35rem solid #be123c; display: grid; gap: 0.25rem; margin-top: 1rem; padding: 0.8rem 1rem; }
 .issued-result { margin-bottom: 1rem; }
 .supersession-result { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); margin-bottom: 1rem; }
+.credentials { display: grid; gap: 2rem; }
+.credential-form { max-width: 46rem; }
+.credential-form small { color: #486581; }
+.one-time-credential { background: #fff7ed; border: 2px solid #c2410c; border-radius: 0.65rem; padding: 1.25rem; }
+.one-time-credential h2 { margin-top: 0; }
+.credential-value { background: white; border: 1px solid #fed7aa; display: block; overflow-wrap: anywhere; padding: 0.75rem; }
+.credential-table code { overflow-wrap: anywhere; }
+.credential-table .revoked { background: #f8fafc; color: #486581; }
+.credential-table .status-pill.revoked-status { background: #fee2e2; color: #991b1b; }
 footer { border-top: 1px solid #d9e2ec; color: #486581; padding: 1.5rem max(1.25rem, calc((100% - 72rem) / 2)); }
 code { background: #e6eef5; border-radius: 0.2rem; padding: 0.1rem 0.25rem; }
 @media (max-width: 38rem) {

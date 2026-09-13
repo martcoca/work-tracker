@@ -5,7 +5,7 @@ import App from "./App.vue";
 import type { APIClient } from "./api";
 import type { AuthPort, AuthUser } from "./auth";
 import { routes } from "./router";
-import type { DirectoryStatus, EpicView, InitiativeView, InitiativesView, PacketView } from "./types";
+import type { AgentCredentialListResponse, DirectoryStatus, EpicView, InitiativeView, InitiativesView, PacketView } from "./types";
 
 export const directory: DirectoryStatus = {
   published_at: "2035-05-06T12:00:00Z",
@@ -14,7 +14,8 @@ export const directory: DirectoryStatus = {
   stale: false,
 };
 
-const views: Record<string, InitiativesView | InitiativeView | EpicView | PacketView> = {
+const views: Record<string, InitiativesView | InitiativeView | EpicView | PacketView | AgentCredentialListResponse> = {
+  "/api/agent-credentials": { credentials: [] },
   "/api/initiatives": {
     directory,
     initiatives: [{ id: "0004", epic_count: 1, packet_count: 1, blocked_count: 0, unclaimed_count: 1 }],
@@ -85,7 +86,10 @@ export function fakeAPI(): APIClient {
 }
 
 export function syntheticUser(): AuthUser {
-  return { getToken: vi.fn().mockResolvedValue("synthetic-token") };
+  return {
+    getToken: vi.fn().mockResolvedValue("synthetic-token"),
+    getTenantID: vi.fn().mockResolvedValue("tenant-synthetic"),
+  };
 }
 
 export function fakeAuth(user: AuthUser | null): { auth: AuthPort; signIn: ReturnType<typeof vi.fn>; signOut: ReturnType<typeof vi.fn> } {

@@ -132,6 +132,44 @@ export interface IssuedResponse {
   parent?: PacketRecord;
 }
 
+export interface AgentWorkload {
+  kind: "workload";
+  issuer: string;
+  subject: string;
+}
+
+export interface AgentCredentialBinding {
+  packet_id: string;
+  attempt_id: string;
+  issued_at: string;
+  expires_at: string;
+}
+
+export interface AgentCredentialMetadata {
+  id: string;
+  tenant_id: string;
+  workload: AgentWorkload;
+  binding: AgentCredentialBinding;
+  created_by: string;
+  created_at: string;
+  revoked_by?: string;
+  revoked_at?: string;
+  last_used_at?: string;
+}
+
+export interface AgentCredentialListResponse {
+  credentials: AgentCredentialMetadata[];
+}
+
+export interface AgentCredentialIssuedResponse {
+  credential: string;
+  metadata: AgentCredentialMetadata;
+}
+
+export interface AgentCredentialMetadataResponse {
+  metadata: AgentCredentialMetadata;
+}
+
 export interface APIErrorBody {
   code: string;
   message: string;
