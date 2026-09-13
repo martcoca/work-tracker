@@ -3,6 +3,7 @@ import {
   GoogleAuthProvider,
   browserSessionPersistence,
   getAuth,
+  getIdTokenResult,
   getRedirectResult,
   onAuthStateChanged,
   setPersistence,
@@ -17,12 +18,18 @@ export const LOGOUT_URL = `https://${AUTH_DOMAIN}/signed-out`;
 
 export interface AuthUser {
   getToken(): Promise<string>;
+  getTenantID(): Promise<string | null>;
 }
 
 export interface AuthPort {
   observe(callback: (user: AuthUser | null) => void): () => void;
   signIn(): Promise<void>;
   signOut(): Promise<void>;
+}
+
+export function tenantIDFromClaims(claims: Record<string, unknown>): string | null {
+  const tenantID = claims.tenant_id;
+  return typeof tenantID === "string" && tenantID !== "" && tenantID.trim() === tenantID ? tenantID : null;
 }
 
 interface FirebaseRuntimeConfig {
@@ -44,7 +51,14 @@ export async function createFirebaseAuth(): Promise<AuthPort> {
   await getRedirectResult(auth);
 
   const adapt = (user: User | null): AuthUser | null =>
-    user === null ? null : { getToken: () => user.getIdToken() };
+    user === null
+      ? null
+      : {
+          getToken: () => user.getIdToken(),
+          async getTenantID() {
+            return tenantIDFromClaims((await getIdTokenResult(user)).claims);
+          },
+        };
 
   return {
     observe(callback) {

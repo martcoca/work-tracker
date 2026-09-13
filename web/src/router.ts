@@ -4,6 +4,7 @@ const EmptyRoute = { template: "<span />" };
 
 export const routes: RouteRecordRaw[] = [
   { path: "/", name: "initiatives", component: EmptyRoute },
+  { path: "/agent-credentials", name: "agent-credentials", component: EmptyRoute },
   { path: "/initiatives/:initiative", name: "initiative", component: EmptyRoute },
   { path: "/initiatives/:initiative/epics/:epic", name: "epic", component: EmptyRoute },
   { path: "/initiatives/:initiative/epics/:epic/new", name: "packet-new", component: EmptyRoute },

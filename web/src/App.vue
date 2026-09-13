@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { APIError, type APIClient } from "./api";
 import type { AuthPort, AuthUser } from "./auth";
+import AgentCredentialsPanel from "./AgentCredentialsPanel.vue";
 import AuthoringPanel from "./AuthoringPanel.vue";
 import type {
   APIErrorBody,
@@ -88,12 +89,16 @@ function dateText(value: string): string {
       <p class="eyebrow">Agentic engineering</p>
       <RouterLink class="brand" to="/">Work Tracker</RouterLink>
     </div>
-    <button v-if="user" class="secondary" type="button" @click="props.auth.signOut">Sign out</button>
+    <div v-if="user" class="header-actions">
+      <RouterLink class="header-link" to="/agent-credentials">Agent credentials</RouterLink>
+      <button class="secondary" type="button" @click="props.auth.signOut">Sign out</button>
+    </div>
   </header>
 
   <nav v-if="user && route.name !== 'signed-out'" class="breadcrumbs" aria-label="Breadcrumb">
     <ol>
       <li><RouterLink to="/">Initiatives</RouterLink></li>
+      <li v-if="route.name === 'agent-credentials'" aria-current="page">Agent credentials</li>
       <li v-if="route.params.initiative">
         <RouterLink :to="`/initiatives/${route.params.initiative}`">Initiative {{ route.params.initiative }}</RouterLink>
       </li>
@@ -195,6 +200,12 @@ function dateText(value: string): string {
         :user="user"
         :initiative="String(route.params.initiative)"
         :epic="String(route.params.epic)"
+      />
+
+      <AgentCredentialsPanel
+        v-else-if="route.name === 'agent-credentials'"
+        :api="props.api"
+        :user="user"
       />
 
       <article v-else-if="packet" aria-labelledby="packet-heading">
