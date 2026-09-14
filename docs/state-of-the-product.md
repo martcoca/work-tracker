@@ -6,8 +6,8 @@ is the thing it is supposed to replace.
 
 ## Live
 
-**https://tracker.martcoca.com** — serving `82712f63`, confirmed by fetching that commit's
-own marker file.
+**https://tracker.martcoca.com** — serving `064212fa`, confirmed by fetching that commit's
+own marker file and comparing its content to the sha.
 
 | | |
 |---|---|
@@ -48,25 +48,22 @@ repository-packets.json  n=22   published 17:13:59
 ```
 
 The union is six packets behind while its envelope looks current, so **no freshness check can
-catch it.** It becomes correct the first time the app itself publishes — which happens on the
-first packet issued *in the app*, and has never happened. Anything reading packet state should
-read `repository-packets.json` until then.
+catch it.** And it is **what the signed-in app displays**: the runtime reader fetches
+`packets.json`, never `repository-packets.json`, so the Founder sees 16 packets with
+out-of-date statuses. It is only rebuilt when someone issues a packet in the app, which has
+never happened. Fixing that is the top of the [roadmap](roadmap.md).
 
-## Packets
+**Nothing lets anyone comment or transition a status.** The packet model supports both, with
+evidence required for `done`, but no route exposes either — to a human or to an agent.
 
-15 done, 5 not started, 1 in progress. The five open ones:
+## How work is managed
 
-| Packet | Is |
-|---|---|
-| `0004-E03-T01` | The session API: read, comment, transition, deny by default |
-| `0004-E03-T03` | Revoke a grant and measure how long it takes to stop working |
-| `0004-E03-T06` | Authoring accepts a credential, not only a person |
-| `0004-E06-T01` | Observe cloud spend and alert before the bill |
-| `0004-E06-T02` | Record what the organization spends to run |
-| `0004-E07-T02` | *(in progress)* Publish the export from the app, so the app becomes the system of record |
-
-`0004-E07-T02` is the one that unfreezes `packets.json`, and everything about the app being a
-system of record rather than a viewer depends on it.
+**By [`docs/roadmap.md`](roadmap.md), derived from the specification — not by `packets/`.**
+The operating model in which one session authored packets and another executed them is
+retired; one session owns this product end to end. `packets/` and `evidence/` remain as the
+record of that model and as the live product's data (the deploy publishes `packets/` as
+`repository-packets.json`), and no longer decide what is worked on. Their statuses are
+frozen as they stood on 2026-09-13: 15 done, 5 not started, 1 in progress, 1 superseded.
 
 ## Cost
 

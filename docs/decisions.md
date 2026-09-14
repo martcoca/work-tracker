@@ -83,3 +83,24 @@ indistinguishable in a grant.
 The human path is **not** removed — a signed-in human keeps every route. What changes is that
 authoring stops *requiring* a person. The Founder reads, navigates and comments; they do not
 author packets.
+
+*Refined by ADR-0059: the chief-of-staff role is gone; the three scopes remain.*
+
+## ADR-0059 — any authorized session puts work in the tracker
+
+*Founder decision, 2026-09-14.* The operating model in which a chief-of-staff session authored
+packets and worker sessions executed them is retired. **This product has no chief-of-staff
+role.** Any session may author, issue and supersede packets, comment on them and transition
+their status, provided it is **authenticated** with a credential this product issued and
+**authorized** because the workload that credential acts as holds the named scope in the
+published grant export.
+
+- **Authority is the scope, never the kind of session.** The product does not know or check
+  whether a session owns a product, planned the work, or is executing it. ADR-0058's three
+  authoring scopes are the whole of authoring authority.
+- **The human path stays.** A signed-in human keeps every route. The Founder reads, navigates
+  and comments, and does not author.
+- **The consequence that orders the work:** until some workload holds `packet:author` and
+  `packet:issue`, nothing puts new work in the tracker at all, because the only human who
+  could has said they will not. Machine authoring is therefore on the critical path, and it
+  needs the identity product to publish those scopes.

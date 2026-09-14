@@ -9,6 +9,7 @@ it.
 | | |
 |---|---|
 | [state-of-the-product.md](state-of-the-product.md) | **Start here.** What is live, what is broken, what is unbuilt — verified, not recalled. |
+| [roadmap.md](roadmap.md) | What to do next, in order, and why — derived from the specification, not from `packets/`. |
 | [product-specification.md](product-specification.md) | What the product is for, who its actors are, and what it must never do. |
 | [technical-specification.md](technical-specification.md) | How it is built: components, interfaces, data, security, delivery. |
 | [architecture.md](architecture.md) | The portfolio constraints it inherits, reproduced in full. |
@@ -25,7 +26,7 @@ product publishes what it knows as a verifiable file so a reader never has to ca
 
 - **No shared spine.** A session reads its packet from a published file, never by calling
   this product. The product can be entirely down and work continues.
-- **Nobody edits a packet body.** Not a human, not an agent, not the chief-of-staff. A packet
+- **Nobody edits a packet body.** Not a human, not an agent. A packet
   whose scope was wrong is superseded and the original stays as the record.
 - **Deny by default**, server-side, on every route. Holding a credential is not authority;
   the named scope is.

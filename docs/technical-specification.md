@@ -59,7 +59,7 @@ organization.
 
 | Component | Responsibility |
 |---|---|
-| Packet authoring | The chief-of-staff composes a packet; the app writes it |
+| Packet authoring | An authorized session, or a signed-in human, composes a packet; the app writes it |
 | Packet store | Append-only events: issued, taken, commented, status changed, closed |
 | Projection | Current packet state per initiative and epic; droppable and rebuildable |
 | Export publisher | Emits the versioned packet exports sessions read |
@@ -243,6 +243,10 @@ Three operations, all requiring a valid grant from 0000:
 | Read a packet | `GET` | Also available as an export; the API is the convenience, not the contract |
 | Comment | `POST` | Append-only. Caller-supplied idempotency key |
 | Transition status | `POST` | Legal transitions only; caller-supplied idempotency key |
+
+Authoring — create and update a draft, issue it, supersede a packet — is open to a session on
+the same terms, under `packet:author`, `packet:issue` and `packet:supersede`
+([ADR-0058](decisions.md#adr-0058), [ADR-0059](decisions.md#adr-0059)).
 
 **Deny by default.** A session presents a credential this product issued. The product
 resolves it to a principal, refuses it outright if it is unknown, revoked, expired or
