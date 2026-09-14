@@ -23,23 +23,36 @@ leaves this repository and has lead time, so it is raised now rather than when i
 
 ## Now
 
-### 1. Show the Founder the packets that exist
+### 1. The tracker keeps its own export alive, and current
 
-The signed-in app displays `packets.json`, which has been frozen since the app publisher
-shipped: 16 packets with out-of-date statuses, while `repository-packets.json` holds 22. A
-deploy renews the envelope without rebuilding the payload, and the only thing that rebuilds it
-is issuing a packet in the app, which nobody is going to do. This is the product showing its
-one user the wrong state, behind an envelope that looks current.
+Two defects with one cause: **only a deploy, or issuing a packet in the app, republishes
+`packets.json`.**
 
-- **Goal:** the published `packets.json` is rebuilt from its sources whenever they differ from
-  what is live, without anyone issuing a packet.
-- **Out of bounds:** the envelope, schema, digest and lifetime; publishing on every write; any
-  new IAM grant — the runtime already holds the Hosting grant. If it turns out to need one,
-  stop and ask.
-- **Check:** a test in which a stale published union is detected and republished, which fails
-  when the rebuild is removed; the store-unreachable path still refuses to publish an empty
-  export; and after deploy, live `packets.json` contains every id in
-  `repository-packets.json`, with no duplicates.
+- **The API stops starting 48 hours after the last deploy.** `packets.json` and
+  `repository-packets.json` expire 48 hours after publication and nothing renews them on a
+  schedule. An expired `packets.json` refuses startup — `TestPresentInvalidPacketRefusesStartup`,
+  its `expired` case — and `main` exits on that error. Cloud Run scales to zero, so the first
+  cold start after expiry takes the API down, and only a deploy brings it back.
+- **The app shows a frozen packet list.** The signed-in app displays `packets.json`: 16
+  packets with out-of-date statuses, while `repository-packets.json` holds 22. A deploy renews
+  its envelope without rebuilding its payload, behind an envelope that looks current.
+
+The design answer is the tracker's, not a workflow's: the runtime already holds the store, the
+repository source and the Hosting grant, and a scheduled job would still leave a cold start
+after expiry refusing to start.
+
+- **Goal:** the service republishes its own export when it is expired, close to expiry, or
+  different from what its sources reconcile to — at startup and when a source changes — and an
+  expired copy of its own export never stops it starting.
+- **Out of bounds:** the published envelope, schema, digest and lifetime; publishing on every
+  write; any workflow or IAM change; the identity product's exports, which stay strict.
+- **Check:** each rule has a test that fails when it is removed — an expired own export is
+  republished rather than refusing startup; a stale union is republished and an identical one
+  is not; an unreachable store still refuses to publish. Live, after deploy, `packets.json`
+  holds every id in `repository-packets.json`, with no duplicates.
+- **Decision it takes:** the tracker's own earlier outputs are merge inputs, verified for
+  integrity but not freshness. Freshness binds what it publishes and the authority it
+  consumes. Recorded as an ADR with the change.
 
 This also resolves issue #44, which asks for a manual step that is no longer going to happen.
 
@@ -115,7 +128,15 @@ export, and reports comments as unsent rather than losing them when the product 
 Nothing like it exists. It becomes worth building once items 3 and 4 give it something to
 call.
 
-### 8. Retire `packets/`
+### 8. A cold start with an expired identity export exits rather than failing closed
+
+The tenant directory and agent grants are required at startup, so if the identity product
+stops publishing, the tracker's next cold start after their expiry exits. Acceptance scenario
+7 asks for it to keep running, fail closed on what those exports authorize, and say how old
+they are. Held copies already behave that way while an instance is alive; a cold start does
+not.
+
+### 9. Retire `packets/`
 
 Capability roadmap increment 6. Gated on the app being the only source of the export (item 1),
 on sessions authoring in the app (item 4), and on a session having executed work delivered as
@@ -130,7 +151,7 @@ an export — because `packets/` is still the live product's data.
   enforces idle cost zero.
 - **Recording what running the organization costs.** Same.
 
-## Acceptance scenarios, as of 2026-09-13
+## Acceptance scenarios, as of 2026-09-14
 
 | # | Scenario | State |
 |---|---|---|
@@ -140,7 +161,7 @@ an export — because `packets/` is still the live product's data.
 | 4 | Editing a body is refused because the route does not exist | **Built.** The route allowlist fails service construction if one is added |
 | 5 | `done` without evidence is refused | **Model only.** Tested in `packet`; no API reaches it (item 3) |
 | 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 7) |
-| 7 | The identity product offline: serve from held exports and say how old | **Built** for the tenant directory, including its age in the app |
+| 7 | The identity product offline: serve from held exports and say how old | **Partial.** A running instance holds and ages its copies; a cold start after expiry exits (item 8) |
 | 8 | Unknown tenant refused at issue; retired refused differently | **Built** and tested |
-| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Broken live.** Navigation works but shows the frozen export (item 1); nothing can set `blocked` (item 3) |
+| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Broken live.** Navigation works but shows the frozen export, and stops 48 hours after a deploy (item 1); nothing can set `blocked` (item 3) |
 | 10 | Projection dropped and rebuilt identically | **Built** and tested at the model level |
