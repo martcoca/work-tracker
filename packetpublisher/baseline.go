@@ -18,7 +18,9 @@ import (
 const maximumExportBytes = 16 << 20
 
 // HTTPBaseline fetches the separately published repository migration source. It accepts
-// no credential and verifies the exact packet contract before returning bytes.
+// no credential and verifies the packet contract's integrity before returning bytes. It does
+// not require the source to be fresh: it is a merge input, and an export built from a
+// repository commit says the same thing after its expiry as before it.
 type HTTPBaseline struct {
 	url     string
 	client  *http.Client
@@ -38,7 +40,7 @@ func NewHTTPBaseline(rawURL string, client *http.Client, timeout time.Duration) 
 	return &HTTPBaseline{url: rawURL, client: client, timeout: timeout}, nil
 }
 
-func (baseline *HTTPBaseline) Verified(at time.Time) ([]byte, error) {
+func (baseline *HTTPBaseline) Verified(time.Time) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), baseline.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, baseline.url, nil)
@@ -68,7 +70,7 @@ func (baseline *HTTPBaseline) Verified(at time.Time) ([]byte, error) {
 	if len(contents) > maximumExportBytes {
 		return nil, errors.New("repository export exceeds size limit")
 	}
-	if _, err := packetexport.Verify(contents, at); err != nil {
+	if _, err := packetexport.VerifyIntegrity(contents); err != nil {
 		return nil, err
 	}
 	return contents, nil

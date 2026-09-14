@@ -406,15 +406,22 @@ func (failure unavailableError) Error() string { return string(failure) }
 func (failure unavailableError) Is(target error) bool { return target == errExportUnavailable }
 
 func verify(configured source, contents []byte, now time.Time) (contract.Envelope, error) {
+	if configured.name == Packets {
+		// The tracker's own export is held when it is intact, even once expired, so that an
+		// export nobody renewed in time cannot stop the one process able to renew it from
+		// starting. Its expiry still binds every use: the snapshot fails closed on it at
+		// render time, and VerifiedCopy refuses it.
+		verified, err := packetexport.VerifyIntegrity(contents)
+		if err != nil {
+			return contract.Envelope{}, err
+		}
+		return verified.Envelope, nil
+	}
 	envelope, err := contract.Verify(contents, configured.schema, now)
 	if err != nil {
 		return contract.Envelope{}, err
 	}
 	switch configured.name {
-	case Packets:
-		if _, err := packetexport.Verify(contents, now); err != nil {
-			return contract.Envelope{}, err
-		}
 	case TenantDirectory:
 		if _, err := tenant.Parse(contents, now); err != nil {
 			return contract.Envelope{}, err
@@ -440,6 +447,9 @@ func (reader *Reader) Ready(at time.Time) error {
 			}
 			if !configured.allowsAbsence() {
 				return fmt.Errorf("export policy is invalid: optional %s is not service-owned", configured.name)
+			}
+			if errors.Is(err, contract.ErrStaleExport) {
+				continue
 			}
 			held := reader.copies[configured.name]
 			if errors.Is(err, ErrNoUsableExport) && errors.Is(held.refreshError, errExportUnavailable) {
@@ -472,6 +482,29 @@ func (reader *Reader) verifiedCopyLocked(name ExportName, at time.Time) ([]byte,
 		return nil, fmt.Errorf("%w: %s expired at %s", contract.ErrStaleExport, name, held.expiresAt.Format(time.RFC3339Nano))
 	}
 	return append([]byte(nil), held.contents...), nil
+}
+
+// IntactCopy returns the held copy of a service-owned export whether or not it has expired.
+// It was verified for integrity on arrival. It exists so the publisher can merge the tracker's
+// own last export into its renewal; authority exports are refused, because they are honoured
+// only while fresh.
+func (reader *Reader) IntactCopy(name ExportName) ([]byte, error) {
+	reader.mu.RLock()
+	defer reader.mu.RUnlock()
+	for _, configured := range reader.sources() {
+		if configured.name != name {
+			continue
+		}
+		if !configured.serviceOwned {
+			return nil, fmt.Errorf("%s is an authority export and is only available fresh", name)
+		}
+		held, ok := reader.copies[name]
+		if !ok || len(held.contents) == 0 {
+			return nil, fmt.Errorf("%w: %s is missing", ErrNoUsableExport, name)
+		}
+		return append([]byte(nil), held.contents...), nil
+	}
+	return nil, fmt.Errorf("unknown export %q", name)
 }
 
 func (reader *Reader) CurrentSnapshot() *surface.Snapshot {

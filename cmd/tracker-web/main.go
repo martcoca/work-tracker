@@ -22,6 +22,8 @@ import (
 const (
 	defaultRepositoryPacketURL = "https://tracker.martcoca.com/repository-packets.json"
 	appProvenanceRepository    = "tracker.martcoca.com/app"
+	// renewalAttemptTimeout bounds one renewal check, including a Hosting release.
+	renewalAttemptTimeout = 2 * time.Minute
 )
 
 func main() {
@@ -67,8 +69,9 @@ func run() error {
 	if storeErr == nil {
 		service, storeErr = surface.NewServiceFromSourceWithStores(exports, verifier, packetStore, credentialStore)
 	}
+	var publisher *packetpublisher.Publisher
 	if storeErr == nil {
-		storeErr = enableAppPublication(context.Background(), service, exports, config.FetchTimeout)
+		publisher, storeErr = enableAppPublication(context.Background(), service, exports, config.FetchTimeout)
 	}
 	if storeErr != nil {
 		if credentialStore != nil {
@@ -88,6 +91,22 @@ func run() error {
 	} else {
 		defer packetStore.Close()
 		defer credentialStore.Close()
+		// Nothing else renews packets.json between deploys, and it expires. Check at once and
+		// then on every refresh interval while this instance lives. The check runs in the
+		// background: blocking startup on a Hosting release could fail the startup probe.
+		if err := publisher.Keep(context.Background(), config.RefreshInterval, renewalAttemptTimeout, func(result packetpublisher.Result, released bool, err error) {
+			switch {
+			case err != nil:
+				log.Printf("packet export renewal refused; last good export retained: %v", err)
+			case released:
+				log.Printf("renewed app packet export: packets=%d digest=%s", result.PacketCount, result.Digest)
+				if refreshErr := exports.Refresh(context.Background()); refreshErr != nil {
+					log.Printf("renewed packet export; local reader will retry refresh: %v", refreshErr)
+				}
+			}
+		}); err != nil {
+			return err
+		}
 	}
 	server := &http.Server{
 		Addr:              ":" + valueOrDefault("PORT", "8080"),
@@ -99,44 +118,44 @@ func run() error {
 	return server.ListenAndServe()
 }
 
-func enableAppPublication(ctx context.Context, service *surface.Service, exports *runtimeexport.Reader, fetchTimeout time.Duration) error {
+func enableAppPublication(ctx context.Context, service *surface.Service, exports *runtimeexport.Reader, fetchTimeout time.Duration) (*packetpublisher.Publisher, error) {
 	siteID := os.Getenv("HOSTING_SITE_ID")
 	commit := os.Getenv("SOURCE_COMMIT")
 	source := contract.Source{Repository: appProvenanceRepository, Commit: commit}
 	if err := contract.ValidateSource(source); err != nil {
-		return err
+		return nil, err
 	}
 	repository, err := packetpublisher.NewHTTPBaseline(
 		valueOrDefault("REPOSITORY_PACKET_EXPORT_URL", defaultRepositoryPacketURL), nil, fetchTimeout,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Refuse authoring at startup if the migration source is not currently verifiable.
-	// The public union remains readable, but a new issue could not safely retain git-only
-	// packets without this independently published source.
+	// Refuse authoring at startup if the migration source is not intact. The public union
+	// remains readable, but a new issue could not safely retain git-only packets without
+	// this independently published source.
 	if _, err := repository.Verified(time.Now().UTC()); err != nil {
-		return err
+		return nil, err
 	}
 	authenticatedClient, err := google.DefaultClient(ctx, "https://www.googleapis.com/auth/firebase.hosting")
 	if err != nil {
-		return fmt.Errorf("initialize keyless Hosting client: %w", err)
+		return nil, fmt.Errorf("initialize keyless Hosting client: %w", err)
 	}
 	destination, err := packetpublisher.NewHostingDestination(siteID, authenticatedClient)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	publisher, err := packetpublisher.New(
 		service.AuthoredTracker(),
-		func(at time.Time) ([]byte, error) { return exports.VerifiedCopy(runtimeexport.Packets, at) },
+		func(time.Time) ([]byte, error) { return exports.IntactCopy(runtimeexport.Packets) },
 		repository.Verified,
 		destination,
 		source,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return service.EnableIssuePublication(func(requestContext context.Context) {
+	return publisher, service.EnableIssuePublication(func(requestContext context.Context) {
 		result, publishErr := publisher.Publish(requestContext)
 		if publishErr != nil {
 			log.Printf("packet issue is durable but publication refused; last good export retained: %v", publishErr)

@@ -104,3 +104,23 @@ published grant export.
   `packet:issue`, nothing puts new work in the tracker at all, because the only human who
   could has said they will not. Machine authoring is therefore on the critical path, and it
   needs the identity product to publish those scopes.
+
+## ADR-0060 — the tracker renews its own export, and its own expired output never stops it
+
+*2026-09-14.* Only a deploy, or issuing a packet in the app, republished `packets.json`. An
+export nobody renewed within its 48-hour lifetime expired; the reader refused to start on an
+expired copy of it; so the one process able to renew it could not start, and nothing else would.
+
+- **The service renews its own export.** It checks at startup and then on every refresh
+  interval, and republishes when the live export is older than half its lifetime or differs
+  from what its sources reconcile to. The check runs in the background, because a Hosting
+  release can outlast a cold start's startup probe.
+- **Its own earlier outputs are merge inputs, verified for integrity but not freshness.** The
+  last public `packets.json` and the repository migration export are checked for schema, exact
+  lifetime, digest and provenance, and accepted after they expire. Freshness binds what the
+  tracker **publishes**, which is verified in full before release, and every export it
+  **honours as authority**, which stays strict.
+- **An expired copy of its own export is held, not refused.** It fails closed on every use —
+  the app renders no packets from it and `VerifiedCopy` refuses it — until a renewal replaces
+  it. The identity product's exports are unaffected: an expired tenant directory or grant
+  export still refuses startup.
