@@ -16,10 +16,10 @@ with a credential this product issued and its workload holds the named scope. Th
 stays; the Founder reads, navigates and comments.
 
 **What that does to the order:** today the only way to put work in the tracker is a signed-in
-human, and the only human has said they will not. So **machine authoring (item 4) is on the
+human, and the only human has said they will not. So **machine authoring (item 3) is on the
 critical path**, not a later refinement — and it depends on the identity product publishing
 `packet:author`, `packet:issue` and `packet:supersede`, which it does not yet. That request
-leaves this repository and has lead time, so it is raised now rather than when item 4 starts.
+leaves this repository and has lead time, so it is raised now rather than when item 3 starts.
 
 ## Now
 
@@ -40,40 +40,37 @@ shows the frozen list for a while and costs an extra Hosting version.
   and a test that fails if the renewal-without-rebuild is restored.
 - **Draft pull request:** it changes `.github/workflows/deploy.yml`.
 
-### 2. Make the documents agree with the decisions
-
-- The technical specification (three places) and the root README still say an export is
-  fresh for **one hour**. ADR-0053 made it **48 hours**; `contract.FreshnessBound` and the live
-  exports carry 48.
-- **Out of bounds:** `packets/` and `evidence/`, which record what was true when written.
-- **Check:** searching `README.md` and `docs/` for "one hour" finds nothing but this item.
-
 ## Next
 
-### 3. The session write-back API
+### 2. The session write-back API
 
 Acceptance scenarios 2, 3 and 5. The packet model already supports comments, status
 transitions and evidence-before-`done`, and credentials already authenticate — but **no route
 exposes any of it**, to a human or an agent. This is the largest gap between the
-specification and the product, and it builds the authorization path item 4 reuses:
+specification and the product, and it builds the authorization path item 3 reuses:
 credential → workload → scope in the grant export.
 
 - **Goal:** an agent presenting a credential comments on and transitions the packet it is
   bound to, authorized by the scope its workload holds in the identity product's grant export,
   with a caller-supplied idempotency key.
 - **Out of bounds:** defining scope names the identity product does not publish; any route
-  that edits a body; measuring revocation timing (item 6).
+  that edits a body; measuring revocation timing (item 5).
 - **Check:** each refusal — unknown, revoked, expired, no grant, wrong scope, wrong packet,
   other tenant, `done` without evidence — returns its own code, and each has a test that fails
   when its rule is removed; a repeated idempotency key produces one event.
 
-To establish first: the grant export carries three grants today with `packet:comment` and
-`packet:transition-status`. One names a GitHub Actions identity, which ADR-0057 retired; the
-other two are unexamined. Confirm which workload a credential here acts as and whether a grant
-names it — and find the identity product's published conformance vectors — before building on
-either.
+What the grant export says, read 2026-09-14: three grants in the tenant. Two are **revoked** —
+the GitHub Actions identity ADR-0057 retired, and a `packet:comment`-only Google workload. One
+is **active**: a Google-issued workload holding `packet:comment` and
+`packet:transition-status`, expiring 2026-12-12. So a credential acting as that workload has
+something to be authorized by, and a credential acting as either revoked one is the live
+refusal case.
 
-### 4. Sessions author with a credential
+Still to establish: where the identity product publishes its **conformance vectors** — the
+agreed cases for evaluating a grant, so this product honours its rules without copying them
+from its source. Nothing in this repository has them. Ask before building the evaluator.
+
+### 3. Sessions author with a credential
 
 ADR-0058 and ADR-0059. Each authoring route — draft create and update, issue, supersession —
 accepts a signed-in human **or** a credential whose workload holds the matching scope.
@@ -88,7 +85,7 @@ accepts a signed-in human **or** a credential whose workload holds the matching 
 - **Needs from the identity product:** the three scopes in its vocabulary, and a grant naming
   the workload that will author. Outside this repository — ask the Founder.
 
-### 5. The Founder comments
+### 4. The Founder comments
 
 The actor table says the Founder "signs in, navigates, reads packets and their history,
 **comments**". Nothing lets them. A comment is how the Founder redirects work without authoring
@@ -97,22 +94,22 @@ it.
 - **Check:** a signed-in human appends an attributed comment; a second submission with the
   same idempotency key is one comment; no route lets anyone edit or delete one.
 
-### 6. Measure how long a revoked grant keeps working
+### 5. Measure how long a revoked grant keeps working
 
-Acceptance scenario 3, and ADR-0056's "revocation has two speeds". Needs item 3. **The
+Acceptance scenario 3, and ADR-0056's "revocation has two speeds". Needs item 2. **The
 measured number is the deliverable**, whatever it is; the bound is read from
 `contract.FreshnessBound`, never written down in a test.
 
 ## Later
 
-### 7. A session client
+### 6. A session client
 
 Acceptance scenarios 1 and 6 assume something a session runs: it reads its packet from the
 export, and reports comments as unsent rather than losing them when the product is down.
-Nothing like it exists. It becomes worth building once items 3 and 4 give it something to
+Nothing like it exists. It becomes worth building once items 2 and 3 give it something to
 call.
 
-### 8. A cold start with an expired identity export exits rather than failing closed
+### 7. A cold start with an expired identity export exits rather than failing closed
 
 The tenant directory and agent grants are required at startup, so if the identity product
 stops publishing, the tracker's next cold start after their expiry exits. Acceptance scenario
@@ -120,7 +117,7 @@ stops publishing, the tracker's next cold start after their expiry exits. Accept
 they are. Held copies already behave that way while an instance is alive; a cold start does
 not.
 
-### 9. Keep the export fresh for readers outside the app
+### 8. Keep the export fresh for readers outside the app
 
 The service renews its export only while an instance is running, and Cloud Run runs one only
 when someone uses the app. After two days with no visitor, `packets.json` expires for anything
@@ -128,10 +125,10 @@ reading it directly. Nothing does today. Once a session reads its work from the 
 scheduled request that wakes the service once a day closes the gap — free on a public
 repository, and a workflow change, so a draft.
 
-### 10. Retire `packets/`
+### 9. Retire `packets/`
 
 Capability roadmap increment 6. Gated on the app being the only source of the export,
-on sessions authoring in the app (item 4), and on a session having executed work delivered as
+on sessions authoring in the app (item 3), and on a session having executed work delivered as
 an export — because `packets/` is still the live product's data.
 
 ## Parked — not scheduled
@@ -147,13 +144,13 @@ an export — because `packets/` is still the live product's data.
 
 | # | Scenario | State |
 |---|---|---|
-| 1 | Created in the app by an authorized session, appears in the export, executed without calling the product | **Partial.** Human authoring and publish-on-issue are built; publication has never run live; no session can author (item 4) or has executed from an export |
-| 2 | A session with a grant comments and transitions | **Not built.** No route (item 3) |
-| 3 | A revoked grant is refused within the bound, distinguishably | **Half.** Credential revocation is immediate and tested; grant refusal needs item 3 |
+| 1 | Created in the app by an authorized session, appears in the export, executed without calling the product | **Partial.** Human authoring and publish-on-issue are built; publication has never run live; no session can author (item 3) or has executed from an export |
+| 2 | A session with a grant comments and transitions | **Not built.** No route (item 2) |
+| 3 | A revoked grant is refused within the bound, distinguishably | **Half.** Credential revocation is immediate and tested; grant refusal needs item 2 |
 | 4 | Editing a body is refused because the route does not exist | **Built.** The route allowlist fails service construction if one is added |
-| 5 | `done` without evidence is refused | **Model only.** Tested in `packet`; no API reaches it (item 3) |
-| 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 7) |
-| 7 | The identity product offline: serve from held exports and say how old | **Partial.** A running instance holds and ages its copies; a cold start after expiry exits (item 8) |
+| 5 | `done` without evidence is refused | **Model only.** Tested in `packet`; no API reaches it (item 2) |
+| 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 6) |
+| 7 | The identity product offline: serve from held exports and say how old | **Partial.** A running instance holds and ages its copies; a cold start after expiry exits (item 7) |
 | 8 | Unknown tenant refused at issue; retired refused differently | **Built** and tested |
-| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Partial.** Navigation works and the export renews itself (ADR-0060), with a stale window after each deploy (item 1); nothing can set `blocked` (item 3) |
+| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Partial.** Navigation works and the export renews itself (ADR-0060), with a stale window after each deploy (item 1); nothing can set `blocked` (item 2) |
 | 10 | Projection dropped and rebuilt identically | **Built** and tested at the model level |

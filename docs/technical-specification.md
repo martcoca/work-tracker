@@ -152,8 +152,9 @@ shape across the portfolio is worth more than a bespoke one here.
 ```
 
 A consumer refuses an expired export and works from nothing rather than from stale work
-assignment. Freshness bound: **one hour**, matching 0000, because two different bounds in one
-organization is a footgun.
+assignment. Freshness bound: **48 hours** ([ADR-0053](decisions.md#adr-0053)), matching 0000,
+because two different bounds in one organization is a footgun. The bound is
+`contract.FreshnessBound`; nothing else states it.
 
 ### Tenancy: the second export, and the one this product nearly forgot
 
@@ -210,7 +211,7 @@ The specification said "reads a file" throughout and never said how the file get
 That gap surfaced when a session was asked to build the deployable image: the Cloud Run
 configuration points at `/data/packets.json` and `/data/tenant-directory.json`, with no
 volume, no mount and no fetch. A binary-only image would start and fail; an image with the
-exports baked in would ship authority frozen at build time, under a one-hour freshness bound.
+exports baked in would ship authority frozen at build time, under a 48-hour freshness bound.
 Both are wrong, and the packet did not say which was meant because the specification had not
 decided.
 
@@ -231,7 +232,7 @@ serving from what it holds; the coupling is to a file's availability, not a serv
 degrades on a timer rather than instantly.
 
 **Nothing is baked into the image.** The image carries the binary. Data arrives at runtime and
-expires on schedule, which is the only arrangement consistent with a one-hour bound: an export
+expires on schedule, which is the only arrangement consistent with a freshness bound: an export
 compiled into an artifact is stale the moment the artifact is built.
 
 ### The session API
