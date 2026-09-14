@@ -21,7 +21,7 @@ by a new one naming its parent; the original stays as the record of what was ask
 That is deliberately more awkward than editing, and the awkwardness is doing work.
 
 **Reads are files; writes are calls.** A session never calls this product to learn what work
-it has — it reads a published export, versioned and digest-verified, with a one-hour freshness
+it has — it reads a published export, versioned and digest-verified, with a 48-hour freshness
 bound. Comments and status transitions are outbound calls that may fail without stopping the
 work.
 
