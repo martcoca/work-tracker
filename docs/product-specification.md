@@ -27,8 +27,7 @@ telemetry that this product deliberately does not collect.
 | Actor | Does | Authority |
 |---|---|---|
 | Founder | Signs in, navigates initiatives, reads packets and their history, comments | Full, within their tenant |
-| Chief-of-staff | Creates and issues packets, supersedes wrong ones, reviews what returns | Authoring and issue |
-| Agent session | Authenticates, reads its packet as a file, comments, transitions status | **Only what its grant says** |
+| Agent session | Authenticates; authors, issues and supersedes packets; reads its packet as a file; comments; transitions status | **Only what its grant says** |
 | Public reader | Sees that the product exists and what it claims | None |
 
 **A session is a first-class actor here, not an event source.** The earlier draft said workers
@@ -36,7 +35,12 @@ telemetry that this product deliberately does not collect.
 That is the change the Founder's direction made, and it is what makes this product 0000's
 first real consumer.
 
-**Nobody edits a packet body.** Not the Founder, not the chief-of-staff, not a session. A
+**There is no chief-of-staff role.** Any session puts work in the tracker, provided it is
+authenticated with a credential this product issued and its workload holds the matching scope
+([ADR-0059](decisions.md#adr-0059)). What kind of session it is — which product it owns,
+whether it planned the work or is executing it — is not something the product checks.
+
+**Nobody edits a packet body.** Not the Founder, not a session. A
 packet whose scope was wrong is superseded, and the original stays as the record of what was
 asked.
 
@@ -50,6 +54,9 @@ earlier draft inherited from the dispatcher:
 3. **the chief-of-staff creates task packets in the app**, and
 4. **any ChatGPT or Claude Code session authenticates and can read, comment on, and update
    the status of every task packet.**
+
+*Item 3 is superseded by Founder direction on 2026-09-14 ([ADR-0059](decisions.md#adr-0059)): the
+chief-of-staff role is retired, and any authenticated, authorized session creates packets.*
 
 Two of those change the product materially. The earlier draft said workers "do not operate
 the product"; requirement 4 makes them first-class authenticated actors. And requirement 3
@@ -142,8 +149,8 @@ with every projected fact identifying its source.
 
 ## Primary workflows
 
-1. **Author and issue.** The chief-of-staff composes a packet against an initiative and epic,
-   names its target and its tenant, and issues it. Its scope freezes at that moment.
+1. **Author and issue.** A session holding the authoring scopes composes a packet against an
+   initiative and epic, names its target and its tenant, and issues it. Its scope freezes at that moment.
 2. **A session takes it.** The session authenticates, reads the packet from a published
    export, and moves it to `in progress`.
 3. **A session reports.** It comments as it works and attaches evidence. Comments append;
@@ -178,7 +185,7 @@ with every projected fact identifying its source.
 
 ### Authoring and dispatch
 
-- The chief-of-staff **creates packets in the app**, and the app writes them.
+- Any authenticated, authorized session **creates packets in the app**, and the app writes them.
 - Issue a packet to a target repository so a session can find it.
 - Supersede a packet whose scope was wrong, preserving the original as the record of what was
   asked.
@@ -226,7 +233,7 @@ this product must not reintroduce it in a nicer interface.
 
 ### Resume Capsule
 
-A chief-of-staff receives a compact, bounded view of the selected initiative/task,
+A session resuming work receives a compact, bounded view of the selected initiative/task,
 attempt and parent/replacement chain, latest authoritative source revisions, checks and
 evidence references, unresolved decisions/findings, freshness, and next permitted
 action. The same representation serves Claude Code and Codex. It contains no provider
@@ -244,7 +251,7 @@ conflicting, or unavailable.
 Accepted history remains readable when a source is unavailable and carries its last
 observation, coverage, and freshness. An optional redacted Resume Capsule expires after
 24 hours and is clearly labelled cached. Product unavailability does not stop dispatch,
-target-local evidence, git work, or chief-of-staff handoff.
+target-local evidence, git work, or handoff between sessions.
 
 ## User-visible quality
 
@@ -269,12 +276,12 @@ target-local evidence, git work, or chief-of-staff handoff.
 - No raw prompts, credentials, secret-bearing logs, or private source copied for
   convenience.
 - **No ingestion from external trackers.** This product is where packets live, not a mirror of somewhere else. Linear and Jira are admitted only on observed need, and importing work from them would recreate the two-homes problem this design removes.
-- No mandatory dependency for dispatch or chief-of-staff continuation.
+- No mandatory dependency for dispatch or for a session continuing its work.
 
 ## Public and private behavior
 
-Private views may expose redacted operational relationships needed by the human and
-chief-of-staff. Public export is a separate allowlisted projection containing only
+Private views may expose redacted operational relationships needed by the human and by
+sessions. Public export is a separate allowlisted projection containing only
 portfolio-safe aggregates or evidence references.
 
 Cloud identifiers, internal paths, private repository content, raw transcripts,
@@ -302,7 +309,7 @@ managed backup, or PITR.
 
 ## Product acceptance scenarios
 
-1. The chief-of-staff creates a packet in the app; it appears in the published export; a
+1. An authorized session creates a packet in the app; it appears in the published export; a
    session executes it **without ever calling this product**.
 2. A session with a valid grant comments and transitions a packet; the comment is attributed
    and appended.

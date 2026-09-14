@@ -6,34 +6,20 @@ product. It is derived from the gap between the
 [what is actually true](state-of-the-product.md), not from `packets/`.
 
 Take the top item unless the Founder names another. Each item states why it matters and the
-check that proves it done. Last derived **2026-09-13**.
+check that proves it done. Last derived **2026-09-14**.
 
-## A decision the Founder owns, before the authoring work
+## Decided: any authorized session puts work in the tracker
 
-**The specification's authoring workflow has no author any more.** It was written for an
-operating model in which a chief-of-staff session authored packets and worker sessions took
-them. That model is retired: one session now owns each product end to end, and the Founder
-does not author packets. Every requirement below that names the chief-of-staff — authoring
-and issuing in the app, dispatch by export, the Resume Capsule, ADR-0058's machine authoring —
-is waiting on one question: **who creates work in the tracker now?**
+[ADR-0059](decisions.md#adr-0059), Founder decision 2026-09-14. There is no chief-of-staff
+role. Any session authors, issues, supersedes, comments and transitions if it is authenticated
+with a credential this product issued and its workload holds the named scope. The human path
+stays; the Founder reads, navigates and comments.
 
-**Recommendation:** the session that owns a product records its own work in the tracker
-through a credential this product issued. The Founder signs in to see what every owning
-session is doing, what it proved, and what is waiting on them, and comments to redirect. That
-keeps the product's category — intent-to-evidence traceability for agent-run engineering —
-and every invariant it already enforces, and it makes the Founder a reader rather than an
-author, which ADR-0058 already says they are.
-
-What it would change, and would need the specification amended to say:
-
-- The **chief-of-staff actor** becomes "the owning session", with the same authoring scopes.
-- **"What is waiting on the Founder"** becomes the primary human view, ahead of navigation.
-- **The Resume Capsule** — a handoff view between sessions — loses its main consumer and
-  should be dropped from the first slice rather than built.
-- **Dispatch by export** stays as a property (no session needs the tracker up to work) but
-  stops being the reason for the design.
-
-Items that depend on this answer are marked **(direction)**. Nothing in *Now* or *Next* does.
+**What that does to the order:** today the only way to put work in the tracker is a signed-in
+human, and the only human has said they will not. So **machine authoring (item 4) is on the
+critical path**, not a later refinement — and it depends on the identity product publishing
+`packet:author`, `packet:issue` and `packet:supersede`, which it does not yet. That request
+leaves this repository and has lead time, so it is raised now rather than when item 4 starts.
 
 ## Now
 
@@ -72,74 +58,89 @@ This also resolves issue #44, which asks for a manual step that is no longer goi
 Acceptance scenarios 2, 3 and 5. The packet model already supports comments, status
 transitions and evidence-before-`done`, and credentials already authenticate — but **no route
 exposes any of it**, to a human or an agent. This is the largest gap between the
-specification and the product, and it is needed under any answer to the decision above.
+specification and the product, and it builds the authorization path item 4 reuses:
+credential → workload → scope in the grant export.
 
 - **Goal:** an agent presenting a credential comments on and transitions the packet it is
-  bound to, authorized by the scope its workload holds in 0000's grant export, with a
-  caller-supplied idempotency key.
-- **Out of bounds:** defining scope names 0000 does not publish; any route that edits a body;
-  measuring revocation timing (item 5).
+  bound to, authorized by the scope its workload holds in the identity product's grant export,
+  with a caller-supplied idempotency key.
+- **Out of bounds:** defining scope names the identity product does not publish; any route
+  that edits a body; measuring revocation timing (item 6).
 - **Check:** each refusal — unknown, revoked, expired, no grant, wrong scope, wrong packet,
   other tenant, `done` without evidence — returns its own code, and each has a test that fails
   when its rule is removed; a repeated idempotency key produces one event.
 
-To establish first: 0000 publishes three grants today carrying `packet:comment` and
+To establish first: the grant export carries three grants today with `packet:comment` and
 `packet:transition-status`. One names a GitHub Actions identity, which ADR-0057 retired; the
 other two are unexamined. Confirm which workload a credential here acts as and whether a grant
-names it — and find 0000's published conformance vectors — before building on either.
+names it — and find the identity product's published conformance vectors — before building on
+either.
 
-### 4. The Founder comments
+### 4. Sessions author with a credential
+
+ADR-0058 and ADR-0059. Each authoring route — draft create and update, issue, supersession —
+accepts a signed-in human **or** a credential whose workload holds the matching scope.
+
+- **Goal:** a session creates, issues and supersedes a packet with no person signed in, and
+  the packet's history records the workload that authored it.
+- **Out of bounds:** removing or changing the human path; inventing scopes; any body edit.
+- **Check:** `packet:author` permits draft create and update only, `packet:issue` issue only,
+  `packet:supersede` supersession only, and a credential holding the wrong one is refused
+  naming the scope it lacked — each rule with a test that fails when removed; the existing
+  human authoring tests pass untouched; the workload attribution survives into the export.
+- **Needs from the identity product:** the three scopes in its vocabulary, and a grant naming
+  the workload that will author. Outside this repository — ask the Founder.
+
+### 5. The Founder comments
 
 The actor table says the Founder "signs in, navigates, reads packets and their history,
-**comments**". Nothing lets them. A comment is how the Founder redirects work without
-authoring it, so it matters more under the recommended direction, not less.
+**comments**". Nothing lets them. A comment is how the Founder redirects work without authoring
+it.
 
 - **Check:** a signed-in human appends an attributed comment; a second submission with the
   same idempotency key is one comment; no route lets anyone edit or delete one.
 
-### 5. Measure how long a revoked grant keeps working
+### 6. Measure how long a revoked grant keeps working
 
 Acceptance scenario 3, and ADR-0056's "revocation has two speeds". Needs item 3. **The
 measured number is the deliverable**, whatever it is; the bound is read from
 `contract.FreshnessBound`, never written down in a test.
 
-## Depends on the direction decision
+## Later
 
-### 6. Machine authoring (direction)
-
-ADR-0058: author, issue and supersede with a credential holding `packet:author`,
-`packet:issue` or `packet:supersede`. Also blocked outside this repository — 0000's export
-publishes none of those three scopes today.
-
-### 7. A session client (direction)
+### 7. A session client
 
 Acceptance scenarios 1 and 6 assume something a session runs: it reads its packet from the
 export, and reports comments as unsent rather than losing them when the product is down.
-Nothing like it exists.
+Nothing like it exists. It becomes worth building once items 3 and 4 give it something to
+call.
 
-### 8. Retire `packets/` (direction)
+### 8. Retire `packets/`
 
-Capability roadmap increment 6. Gated on the app being the only source of the export (item 1)
-and on the direction decision, because `packets/` is still the live product's data.
+Capability roadmap increment 6. Gated on the app being the only source of the export (item 1),
+on sessions authoring in the app (item 4), and on a session having executed work delivered as
+an export — because `packets/` is still the live product's data.
 
-## Parked — not required by the specification
+## Parked — not scheduled
 
-- **Cloud spend observation and alerting.** A portfolio concern, not a product requirement,
-  and it needs the Founder to link billing. The plan-time cost guard already enforces idle
-  cost zero.
+- **The Resume Capsule.** A first-slice experience in the specification whose original
+  consumer, the chief-of-staff, is gone. Not scheduled until a session resuming work needs it.
+- **Cloud spend observation and alerting.** A portfolio concern rather than a product
+  requirement, and it needs the Founder to link billing. The plan-time cost guard already
+  enforces idle cost zero.
 - **Recording what running the organization costs.** Same.
 
 ## Acceptance scenarios, as of 2026-09-13
 
 | # | Scenario | State |
 |---|---|---|
-| 1 | Created in the app, appears in the export, executed without calling the product | **Partial.** Human authoring and publish-on-issue are built; publication has never run live; no session has executed from an export |
+| 1 | Created in the app by an authorized session, appears in the export, executed without calling the product | **Partial.** Human authoring and publish-on-issue are built; publication has never run live; no session can author (item 4) or has executed from an export |
 | 2 | A session with a grant comments and transitions | **Not built.** No route (item 3) |
 | 3 | A revoked grant is refused within the bound, distinguishably | **Half.** Credential revocation is immediate and tested; grant refusal needs item 3 |
 | 4 | Editing a body is refused because the route does not exist | **Built.** The route allowlist fails service construction if one is added |
 | 5 | `done` without evidence is refused | **Model only.** Tested in `packet`; no API reaches it (item 3) |
 | 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 7) |
-| 7 | 0000 offline: serve from held exports and say how old | **Built** for the tenant directory, including its age in the app |
+| 7 | The identity product offline: serve from held exports and say how old | **Built** for the tenant directory, including its age in the app |
 | 8 | Unknown tenant refused at issue; retired refused differently | **Built** and tested |
 | 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Broken live.** Navigation works but shows the frozen export (item 1); nothing can set `blocked` (item 3) |
 | 10 | Projection dropped and rebuilt identically | **Built** and tested at the model level |

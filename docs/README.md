@@ -26,7 +26,7 @@ product publishes what it knows as a verifiable file so a reader never has to ca
 
 - **No shared spine.** A session reads its packet from a published file, never by calling
   this product. The product can be entirely down and work continues.
-- **Nobody edits a packet body.** Not a human, not an agent, not the chief-of-staff. A packet
+- **Nobody edits a packet body.** Not a human, not an agent. A packet
   whose scope was wrong is superseded and the original stays as the record.
 - **Deny by default**, server-side, on every route. Holding a credential is not authority;
   the named scope is.
