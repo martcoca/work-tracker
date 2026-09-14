@@ -311,9 +311,6 @@ func TestPresentInvalidPacketRefusesStartup(t *testing.T) {
 	}{
 		{name: "malformed", packet: func(_ *testing.T, _ []byte) []byte { return []byte("{") }, wantErr: contract.ErrInvalidExport},
 		{name: "wrong digest", packet: tamperPayload, wantErr: contract.ErrDigestMismatch},
-		{name: "expired", packet: func(t *testing.T, _ []byte) []byte {
-			return fixtureDocuments(t, now.Add(-2*contract.FreshnessBound), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Expired packet")["/packets.json"]
-		}, wantErr: contract.ErrStaleExport},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -335,6 +332,48 @@ func TestPresentInvalidPacketRefusesStartup(t *testing.T) {
 			}
 			t.Logf("present %s packet refused: %v", test.name, err)
 		})
+	}
+}
+
+// An expired copy of the tracker's own export must not stop the process that renews it from
+// starting. It is held, fails closed on every use until renewed, and is picked up on refresh.
+func TestExpiredOwnPacketExportStartsFailsClosedAndRecoversOnRefresh(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	documents := fixtureDocuments(t, now.Add(-2*contract.FreshnessBound), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Expired but intact")
+	expired := documents["/packets.json"]
+	fixture := newFixtureSource(documents)
+	server := httptest.NewServer(fixture)
+	defer server.Close()
+	reader := newFixtureReader(t, fixtureConfig(server.URL), server.Client(), func() time.Time { return now })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := reader.Start(ctx); err != nil {
+		t.Fatalf("an expired own packet export refused startup: %v", err)
+	}
+	if _, err := reader.CurrentSnapshot().Initiatives(identity.Principal{TenantID: "tenant-a"}, now); !errors.Is(err, surface.ErrPacketExportStale) {
+		t.Fatalf("expired packets rendered: %v", err)
+	}
+	if _, err := reader.VerifiedCopy(Packets, now); !errors.Is(err, contract.ErrStaleExport) {
+		t.Fatalf("expired packets offered as verified: %v", err)
+	}
+	intact, err := reader.IntactCopy(Packets)
+	if err != nil || !bytes.Equal(intact, expired) {
+		t.Fatalf("intact copy = %d bytes, err %v", len(intact), err)
+	}
+	if _, err := reader.IntactCopy(TenantDirectory); err == nil {
+		t.Fatal("an authority export was offered regardless of freshness")
+	}
+	if status := statusFor(t, reader.ExportStatuses(now), Packets); !status.Stale || status.Absent {
+		t.Fatalf("expired packet status = %+v", status)
+	}
+
+	fixture.setDocument("/packets.json", fixtureDocuments(t, now.Add(-time.Minute), now.Add(-5*time.Minute), now.Add(-5*time.Minute), "Renewed")["/packets.json"])
+	if err := reader.Refresh(ctx); err != nil {
+		t.Fatalf("refresh after renewal: %v", err)
+	}
+	if _, err := reader.CurrentSnapshot().Initiatives(identity.Principal{TenantID: "tenant-a"}, now); err != nil {
+		t.Fatalf("renewed packets still refused: %v", err)
 	}
 }
 

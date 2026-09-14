@@ -33,6 +33,10 @@ func TestHTTPBaselineReturnsOnlyAContractVerifiedPublicExport(t *testing.T) {
 	if string(verified) != string(contents) {
 		t.Fatal("baseline changed verified export bytes")
 	}
+	// A migration source built from a commit says the same thing after its expiry.
+	if _, err := baseline.Verified(now.Add(3 * contract.FreshnessBound)); err != nil {
+		t.Fatalf("expired but intact repository export refused: %v", err)
+	}
 
 	contents = []byte(`{"schema":"tampered"}`)
 	if _, err := baseline.Verified(now.Add(time.Hour)); err == nil {

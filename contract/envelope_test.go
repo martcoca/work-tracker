@@ -124,6 +124,40 @@ func TestVerifierDistinguishesTamperedStaleAndMissingExports(t *testing.T) {
 	}
 }
 
+func TestIntegrityVerifierAcceptsExpiryButNothingElse(t *testing.T) {
+	envelope, err := Build(testSchema, []map[string]string{{"id": "record-alpha"}}, testPublication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized, err := Serialize(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	longExpired := testPublication.PublishedAt.Add(10 * FreshnessBound)
+	if _, err := Verify(serialized, testSchema, longExpired); !errors.Is(err, ErrStaleExport) {
+		t.Fatalf("consumer verification of an expired export = %v, want ErrStaleExport", err)
+	}
+	intact, err := VerifyIntegrity(serialized, testSchema)
+	if err != nil {
+		t.Fatalf("expired but intact export refused: %v", err)
+	}
+	if intact.Digest != envelope.Digest {
+		t.Fatalf("digest = %s, want %s", intact.Digest, envelope.Digest)
+	}
+
+	tampered := []byte(strings.Replace(string(serialized), "record-alpha", "record-bravo", 1))
+	if _, err := VerifyIntegrity(tampered, testSchema); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("tampered error = %v, want ErrDigestMismatch", err)
+	}
+	if _, err := VerifyIntegrity(serialized, "martcoca.synthetic.other/1"); !errors.Is(err, ErrInvalidExport) {
+		t.Fatalf("wrong schema error = %v, want ErrInvalidExport", err)
+	}
+	stretched := []byte(strings.Replace(string(serialized), envelope.ExpiresAt, formatTime(testPublication.PublishedAt.Add(2*FreshnessBound)), 1))
+	if _, err := VerifyIntegrity(stretched, testSchema); !errors.Is(err, ErrInvalidExport) {
+		t.Fatalf("stretched lifetime error = %v, want ErrInvalidExport", err)
+	}
+}
+
 func TestVerifierRejectsMalformedEnvelopeFacts(t *testing.T) {
 	envelope, err := Build(testSchema, []any{}, testPublication)
 	if err != nil {

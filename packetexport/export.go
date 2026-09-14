@@ -196,6 +196,16 @@ func Verify(contents []byte, now time.Time) (Verified, error) {
 	return decodeVerified(envelope)
 }
 
+// VerifyIntegrity decodes a packet export whose digest, lifetime and records are intact,
+// whether or not it has expired. Only a producer merging its own earlier output uses it.
+func VerifyIntegrity(contents []byte) (Verified, error) {
+	envelope, err := contract.VerifyIntegrity(contents, Schema)
+	if err != nil {
+		return Verified{}, err
+	}
+	return decodeVerified(envelope)
+}
+
 // VerifyFile reads a local export and preserves the shared not-found distinction.
 func VerifyFile(path string, now time.Time) (Verified, error) {
 	envelope, err := contract.VerifyFile(path, Schema, now)

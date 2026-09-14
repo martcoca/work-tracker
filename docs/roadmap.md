@@ -23,38 +23,22 @@ leaves this repository and has lead time, so it is raised now rather than when i
 
 ## Now
 
-### 1. The tracker keeps its own export alive, and current
+### 1. Deploys stop writing a stale union over the renewed export
 
-Two defects with one cause: **only a deploy, or issuing a packet in the app, republishes
-`packets.json`.**
+[ADR-0060](decisions.md#adr-0060) made the service renew `packets.json` itself, which ends the
+48-hour outage and the frozen list. One conflict remains, in the deploy: it still renews the
+union it fetched *without rebuilding it*, and uploads the site twice. The new revision's first
+instance starts between the two uploads, renews the export, and the second upload writes the
+stale union back over it. The service's next check notices and corrects it, but every deploy
+shows the frozen list for a while and costs an extra Hosting version.
 
-- **The API stops starting 48 hours after the last deploy.** `packets.json` and
-  `repository-packets.json` expire 48 hours after publication and nothing renews them on a
-  schedule. An expired `packets.json` refuses startup — `TestPresentInvalidPacketRefusesStartup`,
-  its `expired` case — and `main` exits on that error. Cloud Run scales to zero, so the first
-  cold start after expiry takes the API down, and only a deploy brings it back.
-- **The app shows a frozen packet list.** The signed-in app displays `packets.json`: 16
-  packets with out-of-date statuses, while `repository-packets.json` holds 22. A deploy renews
-  its envelope without rebuilding its payload, behind an envelope that looks current.
-
-The design answer is the tracker's, not a workflow's: the runtime already holds the store, the
-repository source and the Hosting grant, and a scheduled job would still leave a cold start
-after expiry refusing to start.
-
-- **Goal:** the service republishes its own export when it is expired, close to expiry, or
-  different from what its sources reconcile to — at startup and when a source changes — and an
-  expired copy of its own export never stops it starting.
-- **Out of bounds:** the published envelope, schema, digest and lifetime; publishing on every
-  write; any workflow or IAM change; the identity product's exports, which stay strict.
-- **Check:** each rule has a test that fails when it is removed — an expired own export is
-  republished rather than refusing startup; a stale union is republished and an identical one
-  is not; an unreachable store still refuses to publish. Live, after deploy, `packets.json`
-  holds every id in `repository-packets.json`, with no duplicates.
-- **Decision it takes:** the tracker's own earlier outputs are merge inputs, verified for
-  integrity but not freshness. Freshness binds what it publishes and the authority it
-  consumes. Recorded as an ADR with the change.
-
-This also resolves issue #44, which asks for a manual step that is no longer going to happen.
+- **Goal:** the deploy writes the union the service would: the live union reconciled with this
+  commit's repository export, instead of a renewal of the live payload.
+- **Out of bounds:** giving the deploy identity access to the store; the envelope.
+- **Check:** after a deploy, live `packets.json` already holds every id in
+  `repository-packets.json`, published by the deploy itself, before any renewal by the service;
+  and a test that fails if the renewal-without-rebuild is restored.
+- **Draft pull request:** it changes `.github/workflows/deploy.yml`.
 
 ### 2. Make the documents agree with the decisions
 
@@ -136,9 +120,17 @@ stops publishing, the tracker's next cold start after their expiry exits. Accept
 they are. Held copies already behave that way while an instance is alive; a cold start does
 not.
 
-### 9. Retire `packets/`
+### 9. Keep the export fresh for readers outside the app
 
-Capability roadmap increment 6. Gated on the app being the only source of the export (item 1),
+The service renews its export only while an instance is running, and Cloud Run runs one only
+when someone uses the app. After two days with no visitor, `packets.json` expires for anything
+reading it directly. Nothing does today. Once a session reads its work from the export, a
+scheduled request that wakes the service once a day closes the gap — free on a public
+repository, and a workflow change, so a draft.
+
+### 10. Retire `packets/`
+
+Capability roadmap increment 6. Gated on the app being the only source of the export,
 on sessions authoring in the app (item 4), and on a session having executed work delivered as
 an export — because `packets/` is still the live product's data.
 
@@ -163,5 +155,5 @@ an export — because `packets/` is still the live product's data.
 | 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 7) |
 | 7 | The identity product offline: serve from held exports and say how old | **Partial.** A running instance holds and ages its copies; a cold start after expiry exits (item 8) |
 | 8 | Unknown tenant refused at issue; retired refused differently | **Built** and tested |
-| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Broken live.** Navigation works but shows the frozen export, and stops 48 hours after a deploy (item 1); nothing can set `blocked` (item 3) |
+| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Partial.** Navigation works and the export renews itself (ADR-0060), with a stale window after each deploy (item 1); nothing can set `blocked` (item 3) |
 | 10 | Projection dropped and rebuilt identically | **Built** and tested at the model level |

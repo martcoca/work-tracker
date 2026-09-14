@@ -186,6 +186,24 @@ func Verify(contents []byte, expectedSchema string, now time.Time) (Envelope, er
 	return envelope, nil
 }
 
+// VerifyIntegrity checks everything Verify checks except that the export is still fresh:
+// schema, the exact lifetime, the canonical digest and provenance. It exists for a producer
+// reading back its own earlier output as input to a new publication, which is itself
+// verified in full before release. Anything honouring an export as authority uses Verify.
+func VerifyIntegrity(contents []byte, expectedSchema string) (Envelope, error) {
+	var timing struct {
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(contents, &timing); err != nil {
+		return Envelope{}, fmt.Errorf("%w: decode envelope: %v", ErrInvalidExport, err)
+	}
+	expiresAt, err := time.Parse(time.RFC3339, timing.ExpiresAt)
+	if err != nil {
+		return Envelope{}, fmt.Errorf("%w: expires_at must be RFC 3339", ErrInvalidExport)
+	}
+	return Verify(contents, expectedSchema, expiresAt.Add(-time.Nanosecond))
+}
+
 func equalDigest(left, right string) bool {
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
 }
