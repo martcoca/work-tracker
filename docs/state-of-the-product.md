@@ -1,4 +1,4 @@
-# What is actually true, 2026-09-13
+# What is actually true, 2026-09-14
 
 Verified against the live product and this repository on the date above, not recalled. Where
 something is broken or unbuilt it says so, because a state document that only lists successes
@@ -6,7 +6,7 @@ is the thing it is supposed to replace.
 
 ## Live
 
-**https://tracker.martcoca.com** — serving `064212fa`, confirmed by fetching that commit's
+**https://tracker.martcoca.com** — serving `fe3afbe0`, confirmed by fetching that commit's
 own marker file and comparing its content to the sha.
 
 | | |
@@ -53,6 +53,12 @@ catch it.** And it is **what the signed-in app displays**: the runtime reader fe
 out-of-date statuses. It is only rebuilt when someone issues a packet in the app, which has
 never happened. Fixing that is the top of the [roadmap](roadmap.md).
 
+**The API stops starting 48 hours after the last deploy.** Nothing renews `packets.json` or
+`repository-packets.json` except a deploy. An expired `packets.json` refuses startup and
+`main` exits, so with Cloud Run at zero instances the first cold start after expiry takes the
+API down until someone deploys. On 2026-09-14 the live copies expire at
+`2026-09-16T11:18:27Z`. The static frontend keeps loading; everything behind `/api` does not.
+
 **Nothing lets anyone comment or transition a status.** The packet model supports both, with
 evidence required for `done`, but no route exposes either — to a human or to an agent.
 
@@ -90,6 +96,9 @@ Idle cost is zero and is enforced rather than intended:
 - **The container build context is a deny-all allowlist** in both `.dockerignore` and the
   `Dockerfile`. A new top-level Go package must be added to both or `go test` passes while the
   image fails to build.
+- **The tracker cannot cold-start without unexpired identity exports.** The tenant directory
+  and agent grants are required at startup. The identity product publishes them daily; if it
+  stops, the tracker's next cold start after their expiry exits.
 - **A retired packet publishes as `status: "not started"` with `superseded_by` set.** The
   model has four statuses and `superseded` is not one. Selecting work by status alone picks up
   retired packets.
