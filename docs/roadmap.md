@@ -21,6 +21,15 @@ critical path**, not a later refinement — and it depends on the identity produ
 `packet:author`, `packet:issue` and `packet:supersede`, which it does not yet. That request
 leaves this repository and has lead time, so it is raised now rather than when item 3 starts.
 
+## Blocked
+
+### The export renewal does not reach production
+
+ADR-0060's renewal is deployed and has not been seen to publish anything. It is correct against
+the real live files locally, so the cause is in production, and finding it needs the Cloud Run
+logs — issue #69, waiting on the Founder. Until it works, the frozen list and the 48-hour expiry
+both stand, and item 1 below is moot.
+
 ## Now
 
 ### 1. Deploys stop writing a stale union over the renewed export
@@ -152,5 +161,5 @@ an export — because `packets/` is still the live product's data.
 | 6 | Product offline: sessions keep working, comments reported unsent | **Reads only.** Exports are static files; nothing reports unsent comments (item 6) |
 | 7 | The identity product offline: serve from held exports and say how old | **Partial.** A running instance holds and ages its copies; a cold start after expiry exits (item 7) |
 | 8 | Unknown tenant refused at issue; retired refused differently | **Built** and tested |
-| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Partial.** Navigation works and the export renews itself (ADR-0060), with a stale window after each deploy (item 1); nothing can set `blocked` (item 2) |
+| 9 | The Founder sees every packet in an initiative, including blocked with what it needs | **Broken live.** Navigation works but shows the frozen export; its renewal is deployed and not yet working (#69); nothing can set `blocked` (item 2) |
 | 10 | Projection dropped and rebuilt identically | **Built** and tested at the model level |

@@ -6,7 +6,7 @@ is the thing it is supposed to replace.
 
 ## Live
 
-**https://tracker.martcoca.com** — serving `fe3afbe0`, confirmed by fetching that commit's
+**https://tracker.martcoca.com** — serving `973ac6da`, confirmed by fetching that commit's
 own marker file and comparing its content to the sha.
 
 | | |
@@ -37,27 +37,23 @@ do not accept a credential. That is the next work.
 
 ## What is broken, and known
 
-**`packets.json` is frozen.** It is the union of repository and app-authored packets, and a
-deploy *renews* it rather than rebuilding it: fresh `published_at`, fresh `source.commit`, and
-an assertion that the payload digest did not change. Measured today, both published in the
-same second:
+**`packets.json` is frozen, and the fix for it has not been seen working.** The app displays
+`packets.json`, the union of repository and app-authored packets, and it still holds 16 packets
+with out-of-date statuses while `repository-packets.json` holds 22. A deploy renews its envelope
+without rebuilding its payload, so **no freshness check can catch it.**
 
-```
-packets.json             n=16   published 17:14:00
-repository-packets.json  n=22   published 17:13:59
-```
+[ADR-0060](decisions.md#adr-0060) (#67) makes the service renew the export itself, and it is
+deployed. But in the 25 minutes after `8edeefb` deployed — including eight minutes of
+sustained traffic to rule out background work starved of CPU — no app-published export
+appeared. Run locally against the real live files, the same renewal releases all 22 packets
+correctly, so the failure is in production: read-only startup, a failing Hosting API step, or a
+store read. Telling which needs the Cloud Run logs: issue #69.
 
-The union is six packets behind while its envelope looks current, so **no freshness check can
-catch it.** And it is **what the signed-in app displays**: the runtime reader fetches
-`packets.json`, never `repository-packets.json`, so the Founder sees 16 packets with
-out-of-date statuses. It is only rebuilt when someone issues a packet in the app, which has
-never happened. Fixing that is the top of the [roadmap](roadmap.md).
-
-**The API stops starting 48 hours after the last deploy.** Nothing renews `packets.json` or
-`repository-packets.json` except a deploy. An expired `packets.json` refuses startup and
-`main` exits, so with Cloud Run at zero instances the first cold start after expiry takes the
-API down until someone deploys. On 2026-09-14 the live copies expire at
-`2026-09-16T11:18:27Z`. The static frontend keeps loading; everything behind `/api` does not.
+**48 hours after the last deploy, the app stops showing packets.** Nothing that works renews
+`packets.json` except a deploy. Since #67, an expired copy no longer stops the API starting —
+tested, not yet observed live — but the app refuses to render packets from it, so the packet
+views fail until someone deploys. On 2026-09-14 the live copy expires at
+`2026-09-16T11:41:38Z`.
 
 **Nothing lets anyone comment or transition a status.** The packet model supports both, with
 evidence required for `done`, but no route exposes either — to a human or to an agent.
