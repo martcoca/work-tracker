@@ -1,5 +1,9 @@
 # Evidence
 
+> **Historical record.** As of 2026-09-13 packets no longer manage work here, and no new
+> evidence files are written. The account of a change is its pull request description, and
+> what it made true goes into [`docs/state-of-the-product.md`](../docs/state-of-the-product.md).
+
 One file per packet, named for its packet id, written by the session that executed it and
 committed in the same pull request.
 

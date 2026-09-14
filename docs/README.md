@@ -9,6 +9,7 @@ it.
 | | |
 |---|---|
 | [state-of-the-product.md](state-of-the-product.md) | **Start here.** What is live, what is broken, what is unbuilt — verified, not recalled. |
+| [roadmap.md](roadmap.md) | What to do next, in order, and why — derived from the specification, not from `packets/`. |
 | [product-specification.md](product-specification.md) | What the product is for, who its actors are, and what it must never do. |
 | [technical-specification.md](technical-specification.md) | How it is built: components, interfaces, data, security, delivery. |
 | [architecture.md](architecture.md) | The portfolio constraints it inherits, reproduced in full. |

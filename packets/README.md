@@ -1,6 +1,12 @@
 # Packets
 
-Work in this repository is defined by packets. A packet states a Goal, a Boundary, a
+> **Historical record, not a work queue.** As of 2026-09-13 work on this product is chosen
+> from [`docs/roadmap.md`](../docs/roadmap.md), by the one session that owns it. The packets
+> below are frozen as they stood then. They remain the live product's data — the deploy
+> publishes them as `repository-packets.json` — so they are not deleted. Nothing below is an
+> instruction.
+
+Work in this repository was defined by packets. A packet states a Goal, a Boundary, a
 Check, and enough context to execute without reading another repository.
 
 ## Working order

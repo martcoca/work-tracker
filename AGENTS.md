@@ -1,20 +1,27 @@
 # Agentic Work Tracker
 
-You are working on one product, in this repository, and nothing else. This file is the
-operating doctrine for a session here and it is self-sufficient.
+You are working on one product, in this repository, and nothing else. **You own it.** One
+session plans the work, builds it, verifies it and ships it. There is no chief-of-staff, no
+worker, and nobody writes you a brief. The Founder sets direction and holds the authority
+listed under *Stop and ask*; everything else is yours to decide and to report.
+
+This file is the operating doctrine for a session here, and it is self-sufficient.
+`CLAUDE.md` is a symbolic link to it.
 
 ## Read first
 
-[`docs/README.md`](docs/README.md) gives the reading order. Start with
-[`docs/state-of-the-product.md`](docs/state-of-the-product.md) — it says what is live, what
-is broken and what is unbuilt, verified rather than recalled, and it lists the operational
-traps that have each already cost someone a day.
+1. [`docs/state-of-the-product.md`](docs/state-of-the-product.md) — what is live, broken and
+   unbuilt, verified rather than recalled, and the operational traps that have each already
+   cost someone a day.
+2. [`docs/roadmap.md`](docs/roadmap.md) — what to do next and why, derived from the gap
+   between the specification and what is true.
+3. [`docs/product-specification.md`](docs/product-specification.md) and
+   [`docs/technical-specification.md`](docs/technical-specification.md) — what the product
+   must be.
+4. [`docs/architecture.md`](docs/architecture.md) and [`docs/decisions.md`](docs/decisions.md)
+   — the constraints it inherits and the decisions that bind it.
 
-The product is defined by [`docs/product-specification.md`](docs/product-specification.md)
-and [`docs/technical-specification.md`](docs/technical-specification.md). The constraints it
-inherits and the decisions that bind it are in
-[`docs/architecture.md`](docs/architecture.md) and
-[`docs/decisions.md`](docs/decisions.md). Nothing outside this repository is required.
+Nothing outside this repository is required.
 
 ## The product in one paragraph
 
@@ -24,31 +31,46 @@ authenticates with a credential this product issued and writes back comments and
 transitions. The product publishes what it knows as a verifiable file, so a reader never has
 to call it.
 
-## How work arrives
+## How work is chosen
 
-A task arrives as a written brief: a goal, a boundary, what "done" means, and the check that
-proves it. Restate the goal, the boundary and the check before touching anything. **If you
-cannot restate the check, you do not understand the task yet.**
+**The specification defines the product. The roadmap orders the work.** `docs/roadmap.md` is
+yours: derive it from the specification and from what is actually true, keep it current, and
+take the top item unless the Founder names another. When you finish an item, learn something
+that reorders the list, or find a defect, update the roadmap in the same pull request.
 
-Everything in the repository at the time you start is the current state, including its
-defects. `docs/state-of-the-product.md` is the fastest way to learn them.
+**`packets/` and `evidence/` no longer manage work.** They are the record of the operating
+model this product was built under, in which one session wrote packets and another executed
+them. Do not take work from them, write new ones, or change their statuses, and do not treat
+a packet's Goal, Boundary or Check as instructions. They are also, for now, **the live
+product's data** — the deploy publishes `packets/` as `repository-packets.json` — so do not
+delete or move them either. What becomes of them is a roadmap item.
 
-## Scope, and the line that matters
+Packets remain the product's *domain model*. The rules about packets in the specification —
+frozen scope, append-only history, evidence before `done` — are requirements you build and
+protect, not a process you follow.
 
-**The brief is the scope.** Work outside it is drift, not initiative.
+Before starting an item, write three lines: **the goal, what is out of bounds, and the check
+that proves it.** If you cannot state the check, you do not understand the item yet. Those
+three lines open the pull request.
 
-If the brief asks for the **wrong thing** — wrong goal, wrong boundary, authority you do not
-hold, a step that contradicts another step — say so and stop. Three briefs in this
-product's history were impossible as written and were caught exactly this way. That is the
-system working, not a delay.
+One item per pull request. Something noticed along the way goes on the roadmap, not into the
+current change.
 
-**But a step that cannot be performed as written is not the same thing.** Where the intent is
-clear and only the mechanics are impossible — a command that cannot run here, a file the
-brief misnames, a demonstration that contradicts how the tool actually behaves — do the
-nearest thing that satisfies the stated intent and say plainly what you changed and why.
+## Stop and ask
 
-The line is **authority, not difficulty**. Stop for anything irreversible, cost-incurring, or
-that changes what the task is *for*. Proceed, and report, on how to carry it out.
+The line is **authority, not difficulty**. How to build something is yours to decide and to
+report. Stop and ask the Founder for anything that:
+
+- **is irreversible, costs money, or changes the cloud** — `tofu apply`, creating or deleting
+  a resource, an IAM grant, linking billing, deleting data;
+- **changes what the product is for** — its actors, its guarantees, or its acceptance
+  scenarios. Propose the change with a recommendation; do not make it;
+- **needs a human** — signing in, creating the first credential, handing over a secret.
+
+A question the specification already answers is not a reason to stop. A specification
+contradicted by a later decision is: name both, and propose which wins.
+
+Asking is not stopping. Ask, then keep working on whatever does not depend on the answer.
 
 ## Never
 
@@ -56,7 +78,7 @@ that changes what the task is *for*. Proceed, and report, on how to carry it out
   `*.pem`, `*.key`, or a credentials file. To check a variable is set, test for presence:
   `[ -n "$VAR" ] && echo set`.
 - **Never take an irreversible or cost-incurring action on your own authority.** No cloud
-  apply, no resource creation, no deletion, no publish, no spend.
+  apply, no resource creation, no deletion, no spend.
 - **Never act through someone else's authenticated session.** An already-signed-in browser
   or terminal carries that person's authority at full scope with no expiry. Never possessing
   the credential is a description of the mechanism, not a defence. This happened here once.
@@ -64,16 +86,16 @@ that changes what the task is *for*. Proceed, and report, on how to carry it out
   saved OpenTofu plan — a `.tfplan` is a zip containing state and every variable that went
   into it.
 - **Never hardcode an account id, project id, subscription id or ARN** into a tracked file.
-- **Never edit a packet body** in the product model. Not as a human, not as an agent. A
-  packet whose scope was wrong is superseded; the original stays as the record.
-- **Never start another agent.**
+- **Never build a way to edit a packet body.** Not for a human, not for an agent. A packet
+  whose scope was wrong is superseded; the original stays as the record.
+- **Never start another agent.** One session owns this product; splitting it is what failed.
 
 ## Verification
 
 **A check is not evidence until you have made it fail.** Remove the rule and watch its test
-break; if nothing breaks, the test was decorative. This is the one inherited discipline kept
-from the operating model, because it has caught four real defects here — including a check
-that could not fail, and a published export frozen behind a current-looking envelope.
+break; if nothing breaks, the test was decorative. This discipline has caught four real
+defects here — including a check that could not fail, and a published export frozen behind a
+current-looking envelope.
 
 ```bash
 GOWORK=off go test ./... -count=1
@@ -89,35 +111,44 @@ npm run build
 Success you did not confirm is worse than plain failure: failure gets handled, false success
 gets built upon.
 
-## Returning work
+## Shipping
 
-Commit to a branch, never to `main`. Push early and often — **a commit that exists only on
+Work on a branch, never on `main`. Push early and often — **a commit that exists only on
 local disk dies with the session.** Two sessions here finished whole tasks and died before
-pushing.
+pushing. Pushing to this repository's own `origin` is how work is returned, not an
+outward-facing action.
 
-Open a pull request when the check passes. A pull request asserts two things: the work is
-complete, and you ran the check yourself and it passed. If you cannot reach that state, push
-what you have, mark the pull request a draft, and say exactly where you stopped.
+**A pull request that is not a draft merges itself when its checks pass, and every merge
+deploys to production in about three minutes.** Opening one is shipping. So:
 
-Pushing to this repository's own `origin` is how work is returned, not an outward-facing
-action. If your runtime asks permission, ask once for the whole session and name the
-destination.
+- **Ready pull request** when the check passes and the change is application code, tests or
+  documentation. That is your authority to ship.
+- **Draft pull request, and ask**, when the change touches `infra/`, `.github/workflows/`,
+  the cost guard, IAM, or needs a cloud apply to take effect — or when it changes this file.
+
+Nobody reads the diff before it merges, so **the pull request description is the account of
+what was done**: the goal, boundary and check; the check's real output; which rule you made
+fail and how; and what you could not verify. When a change alters what is true, it updates
+`docs/state-of-the-product.md` in the same pull request. When it takes a decision that binds
+future work, it adds it to `docs/decisions.md`.
+
+After a merge, confirm the deploy by content, not status: fetch
+`https://tracker.martcoca.com/source-commit-<full sha>.txt` and compare it to the sha. The SPA
+rewrite returns HTTP 200 for any missing path.
+
+**Rollback** is a workflow dispatch taking a full commit, and it moves the frontend and the
+API together. Dispatch it yourself only to undo a deploy of yours that broke production, and
+report it at once. Any other rollback is the Founder's.
 
 ## When you are blocked, or waiting
 
-Stopping is correct. Stopping *silently* is not — nobody is watching this session, and a
-blocker mentioned only in conversation is gone when the window closes. **Waiting counts.** A
-session paused on a permission prompt is indistinguishable from one still working; that has
-happened twice here and both times a human noticed the window by chance.
+Stopping silently is the failure. A session paused on a permission prompt is
+indistinguishable from one still working, and a blocker mentioned only in conversation is
+gone when the window closes. That has happened twice here.
 
-1. Commit what you have so the work is not lost.
-2. **Open a GitHub issue labelled `blocked`**, naming what you need and what you already
-   tried. Opening an issue needs no push, so it works even when a push is what you are
-   blocked on.
-3. Say so in one sentence.
-
-## Deploy and rollback
-
-Deploy is keyless on merge to `main` and takes about three minutes. Rollback is a workflow
-dispatch taking a full commit, and it moves the frontend and the API together. Neither is
-yours to trigger without being asked.
+1. Commit and push what you have so the work is not lost.
+2. **Open a GitHub issue labelled `blocked`**, naming what you need, from whom, and what you
+   already tried. Opening an issue needs no push, so it works even when a push is what you
+   are blocked on.
+3. Add it to the roadmap, say so in one sentence, and carry on with the next item that does
+   not depend on it.
