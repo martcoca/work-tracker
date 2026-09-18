@@ -10,8 +10,8 @@ check that proves it done. Last derived **2026-09-14**.
 
 ## Decided: any authorized session puts work in the tracker
 
-[ADR-0059](decisions.md#adr-0059), Founder decision 2026-09-14. There is no chief-of-staff
-role. Any session authors, issues, supersedes, comments and transitions if it is authenticated
+[ADR-0059](decisions.md#adr-0059), Founder decision 2026-09-14. No kind of session is
+privileged. Any session authors, issues, supersedes, comments and transitions if it is authenticated
 with a credential this product issued and its workload holds the named scope. The human path
 stays; the Founder reads, navigates and comments.
 
@@ -20,6 +20,24 @@ human, and the only human has said they will not. So **machine authoring (item 3
 critical path**, not a later refinement — and it depends on the identity product publishing
 `packet:author`, `packet:issue` and `packet:supersede`, which it does not yet. That request
 leaves this repository and has lead time, so it is raised now rather than when item 3 starts.
+
+## Decided: the product moves to AWS
+
+[ADR-0061](decisions.md#adr-0061), Founder decision 2026-09-18. The target is AWS with an
+Angular frontend and a Go backend, the same stack as the architecture builder. GCP stays live
+until the AWS deployment reaches parity.
+
+**What that does to the order.** The migration cannot start until the datastore is chosen, and
+the Founder has pinned that for research rather than a decision now. So:
+
+- **The datastore research is the first step of the migration**, and it needs no cloud account.
+  The question, the candidates and what the research must establish are in the
+  [technical specification](technical-specification.md#the-datastore--open-pending-research).
+- **Provider-neutral work keeps its value.** Items 2, 3 and 4 below are Go in packages that carry
+  over to Lambda unchanged, so building them on GCP now is not wasted.
+- **GCP mechanics lose value.** The blocked export renewal (#69), item 1 and item 8 are fixes to
+  how Cloud Run and Firebase Hosting behave. On AWS, renewal becomes a scheduled function and
+  item 8 disappears. Weigh each against how soon the move happens before investing in it.
 
 ## Blocked
 
@@ -142,8 +160,8 @@ an export — because `packets/` is still the live product's data.
 
 ## Parked — not scheduled
 
-- **The Resume Capsule.** A first-slice experience in the specification whose original
-  consumer, the chief-of-staff, is gone. Not scheduled until a session resuming work needs it.
+- **The Resume Capsule.** A first-slice experience in the specification. Not scheduled until
+  a session resuming work needs it.
 - **Cloud spend observation and alerting.** A portfolio concern rather than a product
   requirement, and it needs the Founder to link billing. The plan-time cost guard already
   enforces idle cost zero.

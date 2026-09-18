@@ -1,8 +1,7 @@
 # Agentic Work Tracker
 
 You are working on one product, in this repository, and nothing else. **You own it.** One
-session plans the work, builds it, verifies it and ships it. There is no chief-of-staff, no
-worker, and nobody writes you a brief. The Founder sets direction and holds the authority
+session plans the work, builds it, verifies it and ships it. The Founder sets direction and holds the authority
 listed under *Stop and ask*; everything else is yours to decide and to report.
 
 This file is the operating doctrine for a session here, and it is self-sufficient.
@@ -38,9 +37,8 @@ yours: derive it from the specification and from what is actually true, keep it 
 take the top item unless the Founder names another. When you finish an item, learn something
 that reorders the list, or find a defect, update the roadmap in the same pull request.
 
-**`packets/` and `evidence/` no longer manage work.** They are the record of the operating
-model this product was built under, in which one session wrote packets and another executed
-them. Do not take work from them, write new ones, or change their statuses, and do not treat
+**`packets/` and `evidence/` no longer manage work.** They are a historical record of how this
+product was first built. Do not take work from them, write new ones, or change their statuses, and do not treat
 a packet's Goal, Boundary or Check as instructions. They are also, for now, **the live
 product's data** — the deploy publishes `packets/` as `repository-packets.json` — so do not
 delete or move them either. What becomes of them is a roadmap item.

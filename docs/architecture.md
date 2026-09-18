@@ -33,22 +33,30 @@ deliberately, never a filtered view of everything.
 
 ## The stack
 
-Fixed by ADR-0028, and not this product's to revisit:
+Set by [ADR-0061](decisions.md#adr-0061). The target is AWS; the product runs on GCP until the
+AWS deployment reaches parity.
 
-| Layer | Choice |
-|---|---|
-| Cloud | GCP |
-| API | Go on Cloud Run, minimum instances zero |
-| Frontend | Vue on Firebase Hosting |
-| Store | Firestore, Standard Native, `(default)` database |
-| Human identity | Identity Platform |
-| Machine identity | Credentials this product issues (ADR-0056) |
-| Deploy identity | Workload identity federation, keyless |
-| Infrastructure | OpenTofu |
+| Layer | Target | Today |
+|---|---|---|
+| Cloud | AWS, `us-east-1` | GCP |
+| API | Go on AWS Lambda behind an API Gateway HTTP API | Go on Cloud Run |
+| Frontend | Angular, on a private S3 bucket behind CloudFront | Vue on Firebase Hosting |
+| Store | **Open — pending research** | Firestore |
+| Human identity | This product's own Cognito user pool | Identity Platform |
+| Machine identity | Credentials this product issues (ADR-0056) | the same |
+| Deploy identity | GitHub Actions OIDC into product-scoped IAM roles | GCP workload identity federation |
+| Infrastructure | OpenTofu | OpenTofu |
+
+The AWS platform this lands on already defines its constraints: on-demand Lambda with no
+provisioned concurrency and no resident compute, private S3 origins behind CloudFront with
+Origin Access Control, Cloudflare for DNS, Cognito on the Lite plan with PKCE and no
+self-registration, and keyless deployment through GitHub OIDC. Its one rule this product
+cannot follow as written — S3 is the only store it permits — is the open datastore question.
 
 ## The identity product
 
-A sibling product, `identity-and-tenancy`, is the canonical author of two facts this product
+A sibling product, `identity-and-tenancy` — initiative 0000, and "0000" wherever the
+specifications name it — is the canonical author of two facts this product
 consumes and never writes:
 
 - **The tenant directory** — which tenants exist and their status.
@@ -60,15 +68,3 @@ defined; a scope this product recognises and that product does not is drift.
 
 This product never calls it synchronously, never stores a credential belonging to it, and
 keeps serving from the last good copy when it is unavailable.
-
-## What was left behind
-
-The operating model that produced this product — packet briefs copied between repositories,
-per-packet evidence essays, dispatch envelopes, and the checks enforcing all of it — is **not
-part of this product** and is not reproduced here. The product records packets; it is not
-governed by the convention that produced them.
-
-The one inherited discipline worth keeping is narrow and has repeatedly earned its place:
-**a check is not evidence until you have made it fail.** Removing a rule must break a test,
-and a verification that cannot fail proves nothing. Four checks in this repository's history
-passed vacuously because a pipeline masked a failing exit status.

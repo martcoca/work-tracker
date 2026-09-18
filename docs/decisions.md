@@ -15,18 +15,16 @@ work continues from the last good export.
 
 ## ADR-0028 — portfolio stacks follow workloads
 
-The stack is fixed: GCP, Go on Cloud Run, Vue on Firebase Hosting, Firestore, Identity
-Platform, workload identity federation, OpenTofu. Not this product's to revisit.
+The original allocation placed this product on GCP: Go on Cloud Run, Vue on Firebase Hosting,
+Firestore, Identity Platform, workload identity federation, OpenTofu. **Superseded for this
+product by [ADR-0061](#adr-0061)**, which moves it to AWS with an Angular frontend and a Go
+backend.
 
-## ADR-0045 — the chief-of-staff initializes rather than dispatches
-
-Retired the dispatcher's attempt-envelope model. It is why this product tracks **packets**
-rather than attempt envelopes: the envelope's producer no longer exists.
 
 ## ADR-0046 — identity is per-cloud, with a replicated tenant directory
 
-Human identity is per product and never shared — this product's humans are Identity Platform
-and nobody else's. Only tenant and account facts replicate, one way, from a single author.
+Human identity is per product and never shared — this product's humans live in its own
+Cognito user pool and nobody else's. Only tenant and account facts replicate, one way, from a single author.
 **Credentials never replicate.**
 
 ## ADR-0051 — the packet is the unit of isolation
@@ -67,7 +65,7 @@ lookup uses issuer and subject and never an attempt id.
 The cost, accepted deliberately: the identity product cannot say which attempt acted. That
 attribution lives in this product's credential records — packet, attempt, last use.
 
-## ADR-0058 — the chief-of-staff authors through the product, not through a person
+## ADR-0058 — authoring is a machine operation, with three scopes
 
 Authoring is a **machine** operation. Three scopes, deliberately not one:
 
@@ -84,13 +82,11 @@ The human path is **not** removed — a signed-in human keeps every route. What 
 authoring stops *requiring* a person. The Founder reads, navigates and comments; they do not
 author packets.
 
-*Refined by ADR-0059: the chief-of-staff role is gone; the three scopes remain.*
+*Refined by ADR-0059: any authorized session may hold these scopes.*
 
 ## ADR-0059 — any authorized session puts work in the tracker
 
-*Founder decision, 2026-09-14.* The operating model in which a chief-of-staff session authored
-packets and worker sessions executed them is retired. **This product has no chief-of-staff
-role.** Any session may author, issue and supersede packets, comment on them and transition
+*Founder decision, 2026-09-14.* **No kind of session is privileged.** Any session may author, issue and supersede packets, comment on them and transition
 their status, provided it is **authenticated** with a credential this product issued and
 **authorized** because the workload that credential acts as holds the named scope in the
 published grant export.
@@ -124,3 +120,37 @@ expired copy of it; so the one process able to renew it could not start, and not
   the app renders no packets from it and `VerifiedCopy` refuses it — until a renewal replaces
   it. The identity product's exports are unaffected: an expired tenant directory or grant
   export still refuses startup.
+
+## ADR-0061 — the product moves to AWS, with an Angular frontend and a Go backend
+
+*Founder decision, 2026-09-18.* This product and the architecture builder standardise on one
+stack, so a session can move between them without relearning a platform.
+
+| Layer | Target | Replaces |
+|---|---|---|
+| Cloud | AWS, `us-east-1` | GCP |
+| API | Go on AWS Lambda, on-demand, behind an API Gateway HTTP API | Go on Cloud Run |
+| Frontend | Angular, built static, served from a private S3 bucket through CloudFront with Origin Access Control | Vue on Firebase Hosting |
+| Human identity | This product's own Amazon Cognito user pool, Lite plan, hosted sign-in with PKCE | Identity Platform |
+| Machine identity | Credentials this product issues ([ADR-0056](#adr-0056)) | unchanged |
+| Deploy identity | GitHub Actions OIDC assuming product-scoped IAM roles | GCP workload identity federation |
+| Infrastructure | OpenTofu, planned and passed through the cost guard before apply | unchanged |
+| DNS | Cloudflare, `tracker.martcoca.com` | unchanged |
+| Datastore | **Open — pending research** | Firestore |
+
+Carried over unchanged: idle cost zero, deny by default, no shared spine, the published export
+contract and its 48-hour bound, and the identity product as the shared authority for tenants
+and grants.
+
+**The datastore is deliberately undecided.** The AWS platform baseline allows S3 as the only
+durable store and forbids every database, while this product needs an append-only event log
+with one-winner concurrency, listing by initiative and epic, credential lookup by id, and
+idempotency keys. That choice needs research before it is made; the technical specification
+states the question. Nothing moves until it is answered.
+
+**GCP stays live until the AWS deployment reaches parity**, then traffic moves and the GCP
+deployment is retired. The domain code — the packet model, the export contract, credentials
+and authorization — is provider-neutral Go and carries over. What is rebuilt is the frontend,
+the hosting, the identity integration and the store adapters.
+
+Supersedes [ADR-0028](#adr-0028)'s allocation for this product.
