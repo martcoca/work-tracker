@@ -1,8 +1,11 @@
 # Agentic Work Tracker — documentation
 
-Everything needed to work on this product, in this repository. **Nothing here requires the
-doctrine repository**, and the operating model that produced this product no longer governs
-it.
+Everything needed to work on this product, in this repository. **Nothing outside it is
+required.**
+
+**The product is moving to AWS**, with an Angular frontend and a Go backend
+([ADR-0061](decisions.md#adr-0061)). It runs on GCP until the AWS deployment reaches parity,
+and the datastore on AWS is open pending research. The code layout below is today's.
 
 ## Read in this order
 
@@ -31,6 +34,8 @@ product publishes what it knows as a verifiable file so a reader never has to ca
 - **Deny by default**, server-side, on every route. Holding a credential is not authority;
   the named scope is.
 - **Idle cost zero**, enforced by a plan-time guard rather than intended.
+- **Provider-neutral domain.** The packet model, the export contract, credentials and
+  authorization are plain Go that carries over to AWS unchanged; only adapters change.
 - **A check is not evidence until you have made it fail.** Removing a rule must break a test.
 
 ## Where the code is
@@ -40,10 +45,10 @@ surface/          HTTP routes, authentication, authorization
 packet/           the packet model: events, projection, transitions
 packetexport/     the published export: envelope, digest, freshness
 agentcredential/  issuing and authenticating machine credentials
-credentialstore/  Firestore persistence for credentials
-eventstore/       Firestore persistence for packet events
+credentialstore/  credential persistence — Firestore today, adapter replaced on AWS
+eventstore/       packet event persistence — Firestore today, adapter replaced on AWS
 identity/         human identity verification
-web/src/          the Vue frontend
+web/src/          the Vue frontend — rebuilt in Angular on AWS
 infra/            OpenTofu: deploy stack and trust
 ```
 

@@ -23,8 +23,9 @@ with authorization server-side; explicit version on every envelope; caller-suppl
 idempotency on state change; evidence immutable and corrections appended; no
 last-write-wins; idle cost zero; WCAG 2.2 AA on any human surface.
 
-From [ADR-0028](decisions.md#adr-0028): GCP, Go,
-Vue, Cloud Run, Firebase Hosting, Firestore, Identity Platform, workload identity, OpenTofu.
+From [ADR-0061](decisions.md#adr-0061): AWS — Go on Lambda behind an API Gateway HTTP API,
+Angular on S3 and CloudFront, Cognito, GitHub OIDC for deployment, OpenTofu. **The datastore
+is open, pending research.**
 
 From [ADR-0005](decisions.md#adr-0005): **no shared spine.**
 This is the binding constraint on this product and is treated as such below.
@@ -73,46 +74,83 @@ second divergent copy that initiative 0010 exists to prevent.
 
 ## Technology allocation
 
-Unchanged from the prior draft and from the matrix: **GCP**, **Go** on **Cloud Run** with
-minimum instances zero, **Vue** on **Firebase Hosting**, **Firestore**, **Identity Platform**
-for the human, **product-issued machine credentials** for agent sessions
-([ADR-0056](decisions.md#adr-0056)),
-**workload identity federation** for deployment, **OpenTofu**.
+The target is AWS ([ADR-0061](decisions.md#adr-0061)). The product runs on GCP today and stays
+there until the AWS deployment reaches parity.
 
-Excluded from the first boundary: search service, broker, GraphQL, WebSockets, and any
-general model API. A projection rebuild job is deferred until measured need.
+| Concern | Target on AWS | Today, on GCP |
+|---|---|---|
+| API | Go on AWS Lambda, on-demand, no provisioned concurrency, behind an API Gateway HTTP API | Go on Cloud Run, minimum instances zero |
+| Frontend | Angular, built static, in a private S3 bucket served by CloudFront with Origin Access Control | Vue on Firebase Hosting |
+| Human identity | This product's own Cognito user pool, Lite plan, hosted sign-in, authorization code with PKCE, no self-registration | Identity Platform |
+| Human routes at the edge | API Gateway JWT authorizer; application authorization stays server-side and deny-by-default | in the service |
+| Machine identity | Credentials this product issues, authenticated in the service ([ADR-0056](decisions.md#adr-0056)) | the same |
+| Published exports | Static objects in S3 behind the same distribution, short-cached | Firebase Hosting |
+| Datastore | **Open — see below** | Firestore |
+| Deploy identity | GitHub Actions OIDC assuming product-scoped IAM roles, bound to this repository and `refs/heads/main` | GCP workload identity federation |
+| Infrastructure | OpenTofu, guarded plan before apply | OpenTofu |
+
+Excluded: provisioned concurrency and any resident compute, a load balancer, Route 53, a search
+service, a broker, GraphQL, WebSockets, and any general model API. A projection rebuild job is
+deferred until measured need.
+
+**Lambda fits the design rather than merely tolerating it.** The service already assumes no
+warm process: it verifies every export it holds on arrival, fails closed on expiry, and renews
+its own export ([ADR-0060](decisions.md#adr-0060)). A Lambda environment is that lifecycle made
+explicit.
+
+**Two things change shape, and must be designed rather than ported:**
+
+- **Export renewal.** ADR-0060 renews the export on an interval while an instance is alive.
+  Lambda keeps nothing alive between requests, so renewal becomes a finite function invoked on
+  a schedule — EventBridge Scheduler invoking it directly, which the AWS platform permits when
+  time is the real trigger. That also closes the gap where an export expires after two days
+  with no visitor.
+- **Machine credentials at the edge.** The JWT authorizer validates Cognito tokens for humans.
+  A product-issued credential is not a Cognito token, so agent routes authenticate in the
+  service, and no route may be reachable by a credential it was not written to accept.
+
+### The datastore — open, pending research
+
+The AWS platform baseline makes S3 the only durable store and forbids every database,
+DynamoDB included. That rule was written for products with no transactional state. This one
+has it, so the choice is made by research rather than by default.
+
+**What the store must do:**
+
+- Append to a packet's event log with **one-winner concurrency**: two writers at the same
+  version produce exactly one accepted event and one explicit conflict, never a silent merge.
+- List packets by initiative and epic, and rebuild the projection from the log.
+- Look up a credential by id and record its use in the same transaction as the revocation and
+  expiry check, so a concurrent revocation is observed rather than raced.
+- Honour caller-supplied idempotency keys.
+- Cost nothing at rest, and run locally in tests without a cloud account.
+
+**The candidates:**
+
+| | Access patterns | Platform rules | At rest |
+|---|---|---|---|
+| DynamoDB, on-demand | Native: conditional writes for concurrency, queries by key | Requires amending the baseline | No hourly charge; storage and requests |
+| S3 with conditional writes | Concurrency through `If-None-Match` and `If-Match`; listing needs maintained index objects | Allowed today | No hourly charge; storage and requests |
+
+The research establishes, for each: the concurrency guarantee under real contention, the cost
+of listing and of a full projection rebuild, the credential-authentication transaction, local
+testability, and the actual idle and per-request cost at this product's volume, checked against
+current first-party pricing. **Nothing migrates until it is decided**, and the decision is
+recorded in `decisions.md`.
 
 ### Hostname
 
-**`tracker.martcoca.com`** — the human surface and the API behind it.
+**`tracker.martcoca.com`** — the human surface and the API behind it, with the published
+packet exports under a stable path on the same host. Cloudflare stays authoritative for DNS and
+points the name at CloudFront, with an ACM certificate in `us-east-1`.
 
-Parallel to `identity.martcoca.com`, which serves 0000's exports. One subdomain per product,
-named for what the product is rather than for the cloud it happens to sit on: this one is on
-GCP and that one on AWS, and a reader should not have to know or care.
+One subdomain per product, named for what the product is rather than for the cloud it sits on,
+parallel to `identity.martcoca.com`. A reader should not have to know which cloud serves
+either.
 
-The published packet exports are served from the same host under a stable path rather than a
-second subdomain. They are the same product's output, and a consumer already has to know one
-name.
-
-**This hostname is needed before `0004-E02-T01` can be applied**, because Identity Platform
-requires exact callback and logout URLs at configuration time — not at deploy time. The
-DNS record and certificate are prerequisites of that packet, not of this specification.
-
-Every component below names the packet that delivers it. A component with no packet is a
-decomposition gap, and this table exists because one went unnoticed for weeks: Firestore was
-specified here throughout and delivered by nothing, while the product was reported live.
-
-```stack
-Go on Cloud Run: 0004-E02-T03 0004-E05-T01
-Vue on Firebase Hosting: 0004-E02-T01 0004-E05-T01
-Firestore: 0004-E07-T01
-Identity Platform: 0004-E02-T01
-workload identity federation: 0004-E05-T01
-OpenTofu: 0004-E05-T01
-packet export: 0004-E05-T03 0004-E07-T02
-machine access: 0004-E03-T04 0004-E03-T05 0004-E02-T06
-session API: 0004-E03-T01 0004-E03-T03 0004-E03-T06
-```
+Cognito, like any OIDC provider, needs exact callback and sign-out URLs when the app client is
+configured, so the hostname is a prerequisite of the identity integration, not a detail of
+deployment.
 
 ## Interfaces and data
 
@@ -174,7 +212,7 @@ versioned, digest-verified, refused when stale. It never calls 0000.
 |---|---|
 | Which tenants exist, their status | 0000's tenant directory export |
 | Whether this session may act | 0000's agent grants export |
-| Who this human is | **this product's own Identity Platform** |
+| Who this human is | **this product's own Cognito user pool** |
 | Which tenant this human belongs to | a claim on their token, checked against the directory |
 
 ### Why the human is not shared, and that is deliberate
@@ -182,7 +220,7 @@ versioned, digest-verified, refused when stale. It never calls 0000.
 [ADR-0046](decisions.md#adr-0046)
 is explicit: human identity is per-cloud and there is **no SSO**, because the federated tiers
 collapse to 50 MAU on AWS and GCP and the cost analysis rejected it. 0000 signs a member into
-*itself* with Cognito; this product signs a human into *itself* with Identity Platform.
+*itself* with its own Cognito pool; this product signs a human into *itself* with a separate one.
 
 **The tenant is the only shared fact**, which is exactly what the directory is for. The same
 person is two accounts, and that is the design rather than a gap in it.
@@ -207,13 +245,10 @@ append-only event log later is not.
 
 ### How a reader actually obtains an export
 
-The specification said "reads a file" throughout and never said how the file gets there.
-That gap surfaced when a session was asked to build the deployable image: the Cloud Run
-configuration points at `/data/packets.json` and `/data/tenant-directory.json`, with no
-volume, no mount and no fetch. A binary-only image would start and fail; an image with the
-exports baked in would ship authority frozen at build time, under a 48-hour freshness bound.
-Both are wrong, and the packet did not say which was meant because the specification had not
-decided.
+"Reads a file" says nothing about how the file gets there. An early deployable image pointed
+at local paths with no volume, no mount and no fetch: a build without the exports would start
+and fail, and one with the exports baked in would ship authority frozen at build time, under a
+48-hour freshness bound. Both are wrong.
 
 **Decision: a reader fetches the export over HTTPS and holds the last good copy.**
 
@@ -231,7 +266,7 @@ call into the product that published it. 0000 can be entirely down and this prod
 serving from what it holds; the coupling is to a file's availability, not a service's, and it
 degrades on a timer rather than instantly.
 
-**Nothing is baked into the image.** The image carries the binary. Data arrives at runtime and
+**Nothing is baked into the artifact.** The artifact carries the binary. Data arrives at runtime and
 expires on schedule, which is the only arrangement consistent with a freshness bound: an export
 compiled into an artifact is stale the moment the artifact is built.
 
@@ -268,7 +303,7 @@ exists to replace.
 
 ## Security, privacy, and AI governance
 
-Human identity is Identity Platform. Agent identity is a **machine credential this product
+Human identity is this product's Cognito user pool. Agent identity is a **machine credential this product
 issues**, carrying a scope grant from `0000` for the workload it acts as
 ([ADR-0056](decisions.md#adr-0056),
 [ADR-0057](decisions.md#adr-0057)). The
@@ -287,9 +322,19 @@ allowlist and carries no packet body, comment, or principal identifier.
 
 ## Deployment and delivery
 
-One Cloud Run service plus static hosting, deployed keyless from GitHub Actions through the
-federation `platform-gcp` provides. Guarded plan before apply, per the cost guard. Idle cost
-zero: minimum instances zero, Firestore free tier, no load balancer.
+**Today:** one Cloud Run service plus Firebase Hosting, deployed keyless on merge to `main`
+through GitHub Actions and GCP workload identity federation, with a guarded plan before apply
+and a rollback that moves the frontend and the API together.
+
+**Target:** Lambda functions behind an API Gateway HTTP API, and the Angular build in a private
+S3 bucket behind CloudFront, deployed keyless on merge through GitHub Actions OIDC into
+product-scoped IAM roles bound to this repository and `refs/heads/main`. Each function is an
+immutable versioned archive promoted through an alias, so a rollback moves the alias and the
+frontend release together. The AWS account boundary, the OIDC provider and the cost guard
+belong to the platform; this product owns its own stack.
+
+Idle cost stays zero: on-demand Lambda with no provisioned concurrency, no load balancer, and
+nothing resident.
 
 ## Observability and operations
 
@@ -315,7 +360,7 @@ working from a stale export is working from stale assignment, and that must be v
 - Dropping the projection and rebuilding from the event log produces an identical result.
 - The service is taken entirely offline and **sessions holding a current export keep working**.
 - A `done` transition without evidence is refused.
-- Negative cases exist for every check, per [OM-0018](architecture.md#what-was-left-behind).
+- Every check has a negative case, because a check is not evidence until it has been made to fail.
 
 ## Reliability, performance, and cost
 
@@ -328,51 +373,57 @@ correctness requirement: a session working from a stale export is doing the wron
 
 ## Technical sequence
 
-1. Packet event model, projection, and the export contract — **local, no cloud**.
-2. The export publisher, and a session reading a packet from an export.
-3. The human surface: sign in, navigate initiative → epic → packet, read history.
-4. Packet authoring in the app, writing to the store.
-5. The session API: authenticated read, comment, status transition, consuming 0000's validator.
-6. Comment and status write-back from a real session.
-7. Migration: `packets/` removed from the target repositories.
+The product is live on GCP and its domain is built. What remains is the move to AWS, and the
+gaps [`roadmap.md`](roadmap.md) tracks.
 
-**Steps 1 and 2 need no cloud account**, exactly as 0000's first steps did. **Step 5 cannot
-start until 0000 publishes grants**, which is a real cross-initiative dependency and the
-first one this portfolio has had.
+1. **Research and decide the datastore.** Only step 4 depends on the answer.
+2. **Keep building provider-neutral product work** on the current deployment — the session
+   write-back API, machine authoring, Founder comments — in Go packages that carry over
+   unchanged.
+3. **The AWS stack for this product:** its Cognito pool, the S3 and CloudFront frontend, the
+   API Gateway HTTP API and Lambda, and product-scoped deploy roles, each planned and passed
+   through the cost guard.
+4. **Store adapters** for the chosen datastore, behind the store interfaces, so the domain code
+   does not change.
+5. **The Angular frontend**, rebuilt against the same API.
+6. **Parity, then cutover.** Every acceptance scenario that passes on GCP passes on AWS; then
+   `tracker.martcoca.com` moves and the GCP deployment is retired.
 
-**Step 7 is gated on evidence, not deployment** — it happens when a session has demonstrably
-executed a packet delivered as an export, not when the app is live.
+Step 1 needs no cloud account. Every step from 3 on changes the cloud, and each is the
+Founder's to approve before it is applied.
 
 ## Architecture decisions
 
-- [ADR-0028](decisions.md#adr-0028) — the stack
-- [ADR-0005](decisions.md#adr-0005) — no shared spine, the
-  constraint that shapes the read path
-- [ADR-0045](decisions.md#adr-0045)
-  — why the attempt-envelope model this spec replaced no longer has a producer
-- [ADR-0051](decisions.md#adr-0051) — the packet
-  as the unit this product records
+All stated in full in [`decisions.md`](decisions.md):
+
+- ADR-0061 — AWS, Angular and Go, with the datastore open
+- ADR-0005 — no shared spine, the constraint that shapes the read path
+- ADR-0051 — the packet as the unit this product records
+- ADR-0053 — the 48-hour export lifetime
+- ADR-0056 and ADR-0057 — machine access, and grants that name workloads
+- ADR-0058 and ADR-0059 — authoring as a machine operation, open to any authorized session
+- ADR-0060 — the product renews its own export
 
 ## Assumptions and open technical decisions
 
 Resolved:
 
-- ~~What does this product track?~~ **Packets**, not dispatcher attempt envelopes. The
-  previous model's producer was retired by ADR-0045; the packet, its evidence and its pull
-  request are what an agent attempt now produces, because that is what the organization has
-  been producing all week.
-- ~~Where do packets live?~~ **Here**, once live. Repository `packets/` is a stop-gap.
-- ~~Does a session call this product for its work?~~ **No.** It reads an export. Writes are
-  the only synchronous direction and may fail.
+- ~~What does this product track?~~ **Packets**: a unit of work with a frozen scope, its
+  evidence, and the pull request it produced.
+- ~~Where do packets live?~~ **Here.** A repository's `packets/` directory is a migration
+  source, reconciled into the export until it is retired.
+- ~~Does a session call this product for its work?~~ **No.** It reads an export. Writes are the
+  only synchronous direction and may fail.
+- ~~The scope vocabulary.~~ The identity product publishes `packet:comment` and
+  `packet:transition-status`. The authoring scopes of ADR-0058 are requested and not yet
+  published.
 
 Still open, and honestly so:
 
+- **The datastore on AWS.** See *Technology allocation*.
 - **How a human's tenant claim is established** at account creation. The Founder creates
   members in both products separately (ADR-0046), so the claim is set by whoever creates the
   account — and nothing yet checks the two products agree about who belongs where.
-- **The scope vocabulary for session grants.** 0000 has deliberately not defined one, waiting
-  for two consumers. This is the second consumer, so the vocabulary can finally be named —
-  but it should be named by the two products together, not invented here.
 - **Whether comments need threading.** One flat append-only list is the smaller claim and
   probably right. It earns threading when a real conversation needs it.
 - **What happens to a packet whose target repository is archived.** The record outlives the

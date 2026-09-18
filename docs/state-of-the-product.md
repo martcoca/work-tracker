@@ -4,6 +4,11 @@ Verified against the live product and this repository on the date above, not rec
 something is broken or unbuilt it says so, because a state document that only lists successes
 is the thing it is supposed to replace.
 
+**Direction, decided 2026-09-18:** the product moves to AWS, with an Angular frontend and a Go
+backend ([ADR-0061](decisions.md#adr-0061)). Nothing has moved yet, and the datastore on AWS is
+open pending research. Everything under *Live* below describes the GCP deployment that is
+serving today, and stays true until the cutover.
+
 ## Live
 
 **https://tracker.martcoca.com** — serving `973ac6da`, confirmed by fetching that commit's
@@ -61,10 +66,9 @@ evidence required for `done`, but no route exposes either — to a human or to a
 ## How work is managed
 
 **By [`docs/roadmap.md`](roadmap.md), derived from the specification — not by `packets/`.**
-The operating model in which one session authored packets and another executed them is
-retired; one session owns this product end to end. `packets/` and `evidence/` remain as the
-record of that model and as the live product's data (the deploy publishes `packets/` as
-`repository-packets.json`), and no longer decide what is worked on. Their statuses are
+One session owns this product end to end. `packets/` and `evidence/` are a historical record
+of how it was first built, and still the live product's data — the deploy publishes
+`packets/` as `repository-packets.json` — but they no longer decide what is worked on. Their statuses are
 frozen as they stood on 2026-09-13: 15 done, 5 not started, 1 in progress, 1 superseded.
 
 ## Cost
